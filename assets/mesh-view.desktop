@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Mesh View
+Exec=mesh-view %F
+Icon=mesh-view
+Type=Application
+Terminal=false
+Categories=Graphics;3DGraphics;
+MimeType=model/stl;model/obj;model/gltf+json;model/gltf-binary;
