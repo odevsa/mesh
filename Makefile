@@ -1,18 +1,17 @@
 .PHONY: version build release help
 
+%:
+	@:
+
 version:
-	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
-		echo "Usage: make version X.Y.Z"; exit 1; \
+	@VERSION="$(filter-out $@,$(MAKECMDGOALS))"; \
+	if [ -z "$$VERSION" ]; then \
+		echo "Error: Missing version. Ex: make version 1.2.3"; \
+		exit 1; \
 	fi; \
-	VERSION="$(filter-out $@,$(MAKECMDGOALS))"; \
-	echo "Setting version to $$VERSION"; \
-	# Update Cargo.toml version field (first match)
-	sed -E -i.bak '0,/^version = .*/s//version = "'"$$VERSION"'"/' Cargo.toml; \
-	# Update .mock/event.json tag_name (add leading v if missing in file)
-	if [ -f .mock/event.json ]; then \
-		sed -E -i.bak 's/("tag_name"\s*:\s*")v?[0-9]+\.[0-9]+\.[0-9]+("?)/\1v'"$$VERSION"'\2/' .mock/event.json; \
-	fi; \
-	echo "Updated Cargo.toml and .mock/event.json"
+	awk -v new_ver="$$VERSION" '/^\[package\]/ {p=1} /^version =/ && p {sub(/".*"/, "\"" new_ver "\""); p=0} 1' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml; \
+	sed -i 's/"tag_name": "v[^"]*"/"tag_name": "v'"$$VERSION"'"/' .mock/event.json; \
+	echo "Updated version: $$VERSION";
 
 build:
 	cargo build --release
@@ -21,7 +20,7 @@ release:
 	@if ! command -v act &> /dev/null; then \
 		echo "Error: 'act' is not installed. Please install it to run the release workflow."; \
 		exit 1; \
-	fi
+	fi; \
 	act release -e .mock/event.json --artifact-server-path ./dist
 
 help:
