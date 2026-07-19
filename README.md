@@ -1,4 +1,4 @@
-# Mesh View
+# Mesh
 
 A lightweight desktop application to view 3D mesh files written in rust.
 
@@ -19,5 +19,5 @@ A lightweight desktop application to view 3D mesh files written in rust.
 2. Run with a file:
 
    ```bash
-   target/release/mesh-view /path/to/model.stl
+   ./target/release/mesh /path/to/model.stl
    ```

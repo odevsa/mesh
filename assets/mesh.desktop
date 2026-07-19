@@ -1,7 +1,7 @@
 [Desktop Entry]
-Name=Mesh View
-Exec=mesh-view %F
-Icon=mesh-view
+Name=Mesh
+Exec=mesh %F
+Icon=mesh
 Type=Application
 Terminal=false
 Categories=Graphics;3DGraphics;

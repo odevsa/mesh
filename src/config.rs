@@ -31,7 +31,7 @@ impl Default for Config {
 
 impl Config {
     pub fn path() -> Option<PathBuf> {
-        if let Some(proj) = ProjectDirs::from("com", "meshview", "mesh-view") {
+        if let Some(proj) = ProjectDirs::from("com", "mesh", "mesh") {
             let cfg_dir = proj.config_dir();
             Some(cfg_dir.join("config.json"))
         } else {

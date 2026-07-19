@@ -15,6 +15,8 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            arch_generic: x86_64
+            arch_deb: amd64
 
     steps:
       - uses: actions/checkout@v4
@@ -26,16 +28,76 @@ jobs:
           profile: minimal
           override: true
 
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils xz-utils libfuse2
+          cargo install cargo-deb
+
       - name: Setup target
         run: rustup target add ${{ matrix.target }} || true
 
+      - name: Get Version
+        id: get_version
+        run: |
+          VERSION=$(grep '^version =' Cargo.toml | head -n1 | cut -d '"' -f 2)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Create Package Names
+        id: names
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          ARCH=${{ matrix.arch_generic }}
+          ARCH_DEB=${{ matrix.arch_deb }}
+          echo "TAR_NAME=mesh-${VERSION}-${ARCH}.tar.xz" >> $GITHUB_OUTPUT
+          echo "DEB_NAME=mesh_${VERSION}_${ARCH_DEB}.deb" >> $GITHUB_OUTPUT
+          echo "APPIMAGE_NAME=mesh-${VERSION}-${ARCH}.AppImage" >> $GITHUB_OUTPUT
+
+      - name: Package .tar.xz
+        run: |
+          cd target/${{ matrix.target }}/release/
+          tar -cJf ../../../${{ steps.names.outputs.TAR_NAME }} mesh
+
+      - name: Package .deb
+        run: |
+          cargo deb --target ${{ matrix.target }} --no-build --output ${{ steps.names.outputs.DEB_NAME }}
+
+      - name: Package AppImage
+        run: |
+          curl -LO https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps
+
+          cp target/${{ matrix.target }}/release/mesh AppDir/usr/bin/
+          cp assets/mesh.desktop AppDir/
+          cp assets/icons/512x512/apps/mesh.png AppDir/usr/share/icons/hicolor/512x512/apps/
+          cp assets/icons/512x512/apps/mesh.png AppDir/mesh.png
+          ln -s usr/bin/mesh AppDir/AppRun
+
+          ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage AppDir ${{ steps.names.outputs.APPIMAGE_NAME }}
+
+      - name: Upload Local Test
+        uses: actions/upload-artifact@v4
+        if: ${{ env.ACT == 'true' }}
+        with:
+          name: packages
+          path: |
+            mesh*.tar.xz
+            mesh*.deb
+            mesh*.AppImage
 
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
         with:
-          files: target/${{ matrix.target }}/release/mesh-view
+          files: |
+            ${{ steps.names.outputs.TAR_NAME }}
+            ${{ steps.names.outputs.DEB_NAME }}
+            ${{ steps.names.outputs.APPIMAGE_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

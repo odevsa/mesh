@@ -1,5 +1,5 @@
 [package]
-name = "mesh-view"
+name = "mesh"
 version = "0.1.0"
 edition = "2024"
 
@@ -17,3 +17,15 @@ gltf = "1.4"
 
 [features]
 default = []
+
+[package.metadata.deb]
+assets = [
+    ["target/release/mesh", "usr/bin/mesh", "755"],
+    ["assets/mesh.desktop", "usr/share/applications/mesh.desktop", "644"],
+    ["assets/icons/16x16/apps/mesh.png", "usr/share/icons/hicolor/16x16/apps/mesh.png", "644"],
+    ["assets/icons/32x32/apps/mesh.png", "usr/share/icons/hicolor/32x32/apps/mesh.png", "644"],
+    ["assets/icons/64x64/apps/mesh.png", "usr/share/icons/hicolor/64x64/apps/mesh.png", "644"],
+    ["assets/icons/128x128/apps/mesh.png", "usr/share/icons/hicolor/128x128/apps/mesh.png", "644"],
+    ["assets/icons/256x256/apps/mesh.png", "usr/share/icons/hicolor/256x256/apps/mesh.png", "644"],
+    ["assets/icons/512x512/apps/mesh.png", "usr/share/icons/hicolor/512x512/apps/mesh.png", "644"],
+]

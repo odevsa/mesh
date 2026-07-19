@@ -66,7 +66,7 @@ mod render {
 
     pub fn run(mesh: Option<MeshData>, cfg: Config, load_error: Option<String>) {
         
-        let mut window = pollster::block_on(Window::new("Mesh View"));
+        let mut window = pollster::block_on(Window::new("Mesh"));
         window.set_background_color(kiss3d::color::Color::new(
             cfg.background[0] as f32 / 255.0,
             cfg.background[1] as f32 / 255.0,
