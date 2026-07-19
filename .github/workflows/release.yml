@@ -58,8 +58,16 @@ jobs:
 
       - name: Package .tar.xz
         run: |
-          cd target/${{ matrix.target }}/release/
-          tar -cJf ../../../${{ steps.names.outputs.TAR_NAME }} mesh
+          TMPDIR=/tmp/mesh-${{ steps.get_version.outputs.VERSION }}
+          mkdir -p $TMPDIR
+
+          cp target/${{ matrix.target }}/release/mesh $TMPDIR/
+          cp -r assets/* $TMPDIR/
+
+          # TAR tudo que tem dentro do $TMPDIR
+          tar -cJf ${{ steps.names.outputs.TAR_NAME }} -C $TMPDIR .
+
+          rm -rf $TMPDIR
 
       - name: Package .deb
         run: |
