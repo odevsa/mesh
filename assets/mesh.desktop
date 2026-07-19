@@ -1,8 +1,8 @@
 [Desktop Entry]
 Name=Mesh
-Exec=mesh %F
+Exec=mesh %f
 Icon=mesh
 Type=Application
 Terminal=false
 Categories=Graphics;3DGraphics;
-MimeType=model/stl;model/obj;model/gltf+json;model/gltf-binary;
+MimeType=model/stl;model/obj;image/x-tga;model/gltf+json;model/gltf-binary;
