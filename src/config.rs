@@ -12,6 +12,8 @@ pub struct Config {
     pub camera_eye: [f32; 3],
     pub scroll_speed: f32,
     pub invert_scroll: bool,
+    pub scroll_min: f32,
+    pub scroll_max: f32,
 }
 
 impl Default for Config {
@@ -25,6 +27,8 @@ impl Default for Config {
             camera_eye: [0.0, 0.0, 2.0],
             scroll_speed: 0.005,
             invert_scroll: false,
+            scroll_min: 0.5,
+            scroll_max: 5.0,
         }
     }
 }

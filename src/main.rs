@@ -76,17 +76,8 @@ mod render {
 
         let mut scene_root = kiss3d::scene::SceneNode3d::empty();
         
-        let scaled_light_position = cfg.object_scale * 2.0;
         let scaled_light_radius = cfg.object_scale * 5.0;
-        let light_top_back = kiss3d::light::Light::point(scaled_light_radius / 2.0);
-        let light_bottom_back = kiss3d::light::Light::point(scaled_light_radius / 2.0);
-        let light_left = kiss3d::light::Light::point(scaled_light_radius);
-        let light_right = kiss3d::light::Light::point(scaled_light_radius);
-        scene_root.add_light(light_top_back).set_position(Vec3::new(0.0, scaled_light_position/2.0, -scaled_light_position));
-        scene_root.add_light(light_bottom_back).set_position(Vec3::new(0.0, -scaled_light_position/2.0, -scaled_light_position));
-        scene_root.add_light(light_left).set_position(Vec3::new(-scaled_light_position, scaled_light_position, scaled_light_position));
-        scene_root.add_light(light_right).set_position(Vec3::new(scaled_light_position, scaled_light_position, scaled_light_position));
-
+        
         let node_color = kiss3d::color::Color::new(
             cfg.object_color[0] as f32 / 255.0,
             cfg.object_color[1] as f32 / 255.0,
@@ -94,21 +85,9 @@ mod render {
             1.0,
         );
 
-        let center: Vec3;
+        let center: Vec3 = Vec3::new(0.0, 0.0, 0.0);
 
-        if let Some(mesh) = mesh {
-            let verts_glam: Vec<Vec3> = mesh
-                .positions
-                .iter()
-                .map(|p| Vec3::new(p[0], p[1], p[2]))
-                .collect();
-
-            let tris: Vec<[u32; 3]> = mesh.indices.clone();
-
-            let mut node = scene_root.add_trimesh(verts_glam, tris, Vec3::new(1.0, 1.0, 1.0), false);
-
-            node.set_color(node_color);
-
+        let object_node: Option<kiss3d::scene::SceneNode3d> = if let Some(mesh) = mesh {
             let mut min = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
             let mut max = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
             for p in &mesh.positions {
@@ -120,23 +99,41 @@ mod render {
                 max.z = max.z.max(p[2]);
             }
 
+            let center_offset = (min + max) / 2.0;
+
+            let verts_glam: Vec<Vec3> = mesh
+                .positions
+                .iter()
+                .map(|p| Vec3::new(p[0], p[1], p[2]) - center_offset)
+                .collect();
+
+            let tris: Vec<[u32; 3]> = mesh.indices.clone();
+
+            let mut node = scene_root.add_trimesh(verts_glam, tris, Vec3::new(1.0, 1.0, 1.0), false);
+
+            node.set_color(node_color);
+
             let size = (max - min).abs();
             let max_dim = size.x.max(size.y).max(size.z).max(1e-6);
             let scale_factor = cfg.object_scale / max_dim;
-            let scaled_size = Vec3::clone(&size) * scale_factor;
-            center = Vec3::new(0.0, scaled_size.y / 2.0, scaled_size.z / 2.0);
 
             node.set_local_scale(scale_factor, scale_factor, scale_factor);
+            Some(node)
         } else {
             let mut cube = scene_root.add_cube(0.5, 0.5, 0.5);
             cube.set_color(node_color);
-            center = Vec3::new(0.0, 0.0, 0.0);
-        }
+            Some(cube)
+        };
 
         let eye = Vec3::new(cfg.camera_eye[0], cfg.camera_eye[1], cfg.camera_eye[2]);
         let mut base_camera = OrbitCamera3d::new(eye, center);
         base_camera.rebind_drag_button(None);
         base_camera.rebind_reset_key(None);
+        base_camera.set_min_dist(cfg.scroll_min);
+        base_camera.set_max_dist(cfg.scroll_max);
+
+        let light = kiss3d::light::Light::point(scaled_light_radius * 2.0);
+        scene_root.add_light(light).set_position(eye);
 
         let dist_step_value: f32 = 1.0 + (cfg.scroll_speed * if cfg.invert_scroll { 1.0 } else { -1.0 });
         base_camera.set_dist_step(dist_step_value);
@@ -145,11 +142,18 @@ mod render {
             inner: OrbitCamera3d,
             center: Vec3,
             dist_step: f32,
+            object: Option<kiss3d::scene::SceneNode3d>,
+            last_cursor: Option<(f32, f32)>,
+            dragging: bool,
         }
 
         impl FixedCenterCamera {
             fn new(inner: OrbitCamera3d, center: Vec3, dist_step: f32) -> Self {
-                Self { inner, center, dist_step }
+                Self { inner, center, dist_step, object: None, last_cursor: None, dragging: false }
+            }
+
+            fn set_object(&mut self, obj: kiss3d::scene::SceneNode3d) {
+                self.object = Some(obj);
             }
         }
 
@@ -164,6 +168,8 @@ mod render {
 
             fn handle_event(&mut self, canvas: &Canvas, event: &WindowEvent) {
                 use kiss3d::event::WindowEvent::*;
+                use kiss3d::event::{MouseButton, Action};
+
                 match event {
                     Scroll(_, off, _) => {
                         let offf = *off as f32;
@@ -171,9 +177,42 @@ mod render {
                         self.inner.set_dist(new_dist);
                         self.inner.set_at(self.center);
                     }
+                    WindowEvent::FramebufferSize(_w, _h) => {
+                        self.inner.handle_event(canvas, event);
+                    }
+                    CursorPos(x, y, _) => {
+                        let x = *x as f32;
+                        let y = *y as f32;
+                        if self.dragging {
+                            if let Some((lx, ly)) = self.last_cursor {
+                                let dx = x - lx;
+                                let dy = y - ly;
+
+                                if let Some(obj) = &mut self.object {
+                                    let ang_y = dx * 0.01;
+                                    let ang_x = dy * 0.01;
+                                    use kiss3d::glamx::{Quat, Vec3 as GVec3};
+                                    let qy = Quat::from_axis_angle(GVec3::Y, ang_y);
+                                    let qx = Quat::from_axis_angle(GVec3::X, ang_x);
+                                    let q = qy * qx;
+                                    obj.append_rotation(q);
+                                }
+                            }
+                            self.last_cursor = Some((x, y));
+                        } else {
+                            self.last_cursor = Some((x, y));
+                        }
+                    }
+                    MouseButton(btn, act, _) => {
+                        if *btn == MouseButton::Button1 {
+                            self.dragging = *act == Action::Press;
+                            if !self.dragging {
+                                self.last_cursor = None;
+                            }
+                        }
+                    }
                     _ => {
                         self.inner.handle_event(canvas, event);
-                        self.inner.set_at(self.center);
                     }
                 }
             }
@@ -193,6 +232,10 @@ mod render {
         }
 
         let mut camera = FixedCenterCamera::new(base_camera, center, dist_step_value);
+
+        if let Some(obj) = object_node {
+            camera.set_object(obj);
+        }
 
         if let Some(err) = load_error {
             eprintln!("{}", err);
