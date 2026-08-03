@@ -19,7 +19,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            background: [0x11, 0x11, 0x11],
+            background: [0x0A, 0x0A, 0x0A],
             object_color: [0xCC, 0xCC, 0xCC],
             light_color: [0xCC, 0xCC, 0xCC],
             shadow_color: [0x00, 0x00, 0x00],
