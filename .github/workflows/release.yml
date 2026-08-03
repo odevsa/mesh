@@ -43,7 +43,12 @@ jobs:
       - name: Get Version
         id: get_version
         run: |
-          VERSION=$(grep '^version =' Cargo.toml | head -n1 | cut -d '"' -f 2)
+          if [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
+            TAG=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG#v}
+          else
+            VERSION=$(grep '^version =' Cargo.toml | head -n1 | cut -d '"' -f 2)
+          fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Build
