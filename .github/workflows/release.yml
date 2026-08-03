@@ -7,6 +7,9 @@ on:
 permissions:
   contents: write
 
+env:
+  APP_NAME: mesh
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -52,16 +55,18 @@ jobs:
           VERSION=${{ steps.get_version.outputs.VERSION }}
           ARCH=${{ matrix.arch_generic }}
           ARCH_DEB=${{ matrix.arch_deb }}
-          echo "TAR_NAME=mesh-${VERSION}-${ARCH}.tar.xz" >> $GITHUB_OUTPUT
-          echo "DEB_NAME=mesh_${VERSION}_${ARCH_DEB}.deb" >> $GITHUB_OUTPUT
-          echo "APPIMAGE_NAME=mesh-${VERSION}-${ARCH}.AppImage" >> $GITHUB_OUTPUT
+          APP_NAME=${{ env.APP_NAME }}
+          echo "TAR_NAME=${APP_NAME}-${VERSION}-${ARCH}.tar.xz" >> $GITHUB_OUTPUT
+          echo "DEB_NAME=${APP_NAME}_${VERSION}_${ARCH_DEB}.deb" >> $GITHUB_OUTPUT
+          echo "APPIMAGE_NAME=${APP_NAME}-${VERSION}-${ARCH}.AppImage" >> $GITHUB_OUTPUT
 
       - name: Package .tar.xz
         run: |
-          TMPDIR=/tmp/mesh-${{ steps.get_version.outputs.VERSION }}
+          APP_NAME=${{ env.APP_NAME }}
+          TMPDIR=/tmp/${APP_NAME}-${{ steps.get_version.outputs.VERSION }}
           mkdir -p $TMPDIR
 
-          cp target/${{ matrix.target }}/release/mesh $TMPDIR/
+          cp target/${{ matrix.target }}/release/${APP_NAME} $TMPDIR/
           cp -r assets/* $TMPDIR/
 
           # TAR tudo que tem dentro do $TMPDIR
@@ -75,17 +80,18 @@ jobs:
 
       - name: Package AppImage
         run: |
+          APP_NAME=${{ env.APP_NAME }}
           curl -LO https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool-x86_64.AppImage
 
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/icons/hicolor/512x512/apps
 
-          cp target/${{ matrix.target }}/release/mesh AppDir/usr/bin/
-          cp assets/mesh.desktop AppDir/
-          cp assets/icons/512x512/apps/mesh.png AppDir/usr/share/icons/hicolor/512x512/apps/
-          cp assets/icons/512x512/apps/mesh.png AppDir/mesh.png
-          ln -s usr/bin/mesh AppDir/AppRun
+          cp target/${{ matrix.target }}/release/${APP_NAME} AppDir/usr/bin/
+          cp assets/${APP_NAME}.desktop AppDir/
+          cp assets/icons/512x512/apps/${APP_NAME}.png AppDir/usr/share/icons/hicolor/512x512/apps/
+          cp assets/icons/512x512/apps/${APP_NAME}.png AppDir/${APP_NAME}.png
+          ln -s usr/bin/${APP_NAME} AppDir/AppRun
 
           ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 ./appimagetool-x86_64.AppImage AppDir ${{ steps.names.outputs.APPIMAGE_NAME }}
 
@@ -95,9 +101,9 @@ jobs:
         with:
           name: packages
           path: |
-            mesh*.tar.xz
-            mesh*.deb
-            mesh*.AppImage
+            ${{ env.APP_NAME }}*.tar.xz
+            ${{ env.APP_NAME }}*.deb
+            ${{ env.APP_NAME }}*.AppImage
 
       - name: Release
         uses: softprops/action-gh-release@v2
