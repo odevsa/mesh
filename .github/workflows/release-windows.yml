@@ -1,0 +1,93 @@
+name: Release Windows
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: mesh
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-gnu
+            arch_generic: x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies (for Linux / act cross-compilation)
+        run: |
+          if command -v apt-get &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 binutils-mingw-w64-x86-64 mingw-w64 zip
+          fi
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Get Version
+        id: get_version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" =~ ^refs/tags/ ]]; then
+            TAG="${{ github.ref }}"
+            TAG="${TAG#refs/tags/}"
+            VERSION="${TAG#v}"
+          else
+            VERSION=$(grep '^version =' Cargo.toml | head -n1 | cut -d '"' -f 2)
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Create Package Names
+        id: names
+        shell: bash
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          ARCH="${{ matrix.arch_generic }}"
+          APP_NAME="${{ env.APP_NAME }}"
+          EXE_NAME="${APP_NAME}-${VERSION}-${ARCH}-windows.exe"
+          echo "EXE_NAME=${EXE_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Prepare Executable
+        shell: bash
+        run: |
+          APP_NAME="${{ env.APP_NAME }}"
+          ARCH="${{ matrix.target }}"
+          EXE_NAME="${{ steps.names.outputs.EXE_NAME }}"
+
+          if [ -f "target/$ARCH/release/$APP_NAME.exe" ]; then
+            cp "target/$ARCH/release/$APP_NAME.exe" "$EXE_NAME"
+          elif [ -f "target/release/$APP_NAME.exe" ]; then
+            cp "target/release/$APP_NAME.exe" "$EXE_NAME"
+          fi
+
+      - name: Upload Local Test
+        uses: actions/upload-artifact@v4
+        if: ${{ env.ACT == 'true' }}
+        with:
+          name: packages-windows
+          path: |
+            ${{ steps.names.outputs.EXE_NAME }}
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+        with:
+          files: |
+            ${{ steps.names.outputs.EXE_NAME }}

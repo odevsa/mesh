@@ -18,6 +18,11 @@ gltf = "1.4"
 [features]
 default = []
 
+[build-dependencies]
+winres = "0.1"
+
+[package.metadata.winres]
+
 [package.metadata.deb]
 assets = [
     ["target/release/mesh", "usr/bin/mesh", "755"],

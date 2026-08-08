@@ -21,13 +21,28 @@ release:
 		echo "Error: 'act' is not installed. Please install it to run the release workflow."; \
 		exit 1; \
 	fi; \
-	act release -e .mock/event.json --artifact-server-path ./dist
+	TARGET="$(filter-out $@,$(MAKECMDGOALS))"; \
+	if [ -z "$$TARGET" ]; then \
+		echo "Running all release workflows..."; \
+		act release -e .mock/event.json --artifact-server-path ./dist -W .github/workflows/release-linux.yml -W .github/workflows/release-windows.yml -P windows-latest=catthehacker/ubuntu:act-latest; \
+	elif [ "$$TARGET" = "linux" ]; then \
+		echo "Running Linux release workflow..."; \
+		act release -e .mock/event.json --artifact-server-path ./dist -W .github/workflows/release-linux.yml; \
+	elif [ "$$TARGET" = "windows" ]; then \
+		echo "Running Windows release workflow..."; \
+		act release -e .mock/event.json --artifact-server-path ./dist -W .github/workflows/release-windows.yml -P windows-latest=catthehacker/ubuntu:act-latest; \
+	else \
+		echo "Error: Unknown target '$$TARGET'. Use 'linux', 'windows', or leave empty for all."; \
+		exit 1; \
+	fi
 
 help:
 	@echo "Usage: make <target>"
 	@echo
 	@echo "Available targets:"
-	@echo "  build        Build the project in release mode"
-	@echo "  release      Run GitHub Actions release workflow using act"
-	@echo "  version      Update project version: make version X.Y.Z"
-	@echo "  help         Show this help message"
+	@echo "  build              Build the project in release mode"
+	@echo "  release            Run all GitHub Actions release workflows using act"
+	@echo "  release linux      Run only the Linux release workflow"
+	@echo "  release windows    Run only the Windows release workflow"
+	@echo "  version            Update project version: make version X.Y.Z"
+	@echo "  help               Show this help message"
