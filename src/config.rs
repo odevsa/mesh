@@ -24,7 +24,7 @@ impl Default for Config {
             light_color: [0xCC, 0xCC, 0xCC],
             shadow_color: [0x00, 0x00, 0x00],
             object_scale: 1.0,
-            camera_eye: [0.0, 0.0, 2.0],
+            camera_eye: [0.0, -1.5, 1.5],
             scroll_speed: 0.005,
             invert_scroll: false,
             scroll_min: 0.5,
