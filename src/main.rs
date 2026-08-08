@@ -22,6 +22,7 @@ fn main() {
 
     let mut registry = LoaderRegistry::new();
     registry.register(Box::new(loader::stl::StlLoader {}));
+    registry.register(Box::new(loader::threemf::ThreemfLoader {}));
     registry.register(Box::new(loader::obj::ObjLoader {}));
     registry.register(Box::new(loader::gltf::GltfLoader {}));
     let registry = std::sync::Arc::new(registry);
@@ -167,6 +168,17 @@ mod render {
 
             fn set_loading(&mut self, v: bool) {
                 self.loading = v;
+                if v {
+                    if let Some(obj) = &mut self.object {
+                        obj.set_local_scale(0.0, 0.0, 0.0);
+                    }
+                } else {
+                    if let Some(obj) = &mut self.object {
+                        if self.animate {
+                            obj.set_local_scale(0.5, 0.5, 0.5);
+                        }
+                    }
+                }
             }
 
             fn is_loading(&self) -> bool {
@@ -235,7 +247,7 @@ mod render {
                                 if double {
                                     self.last_click = None;
                                     if let Some(p) = FileDialog::new()
-                                        .add_filter("3D Models", &["stl", "obj", "gltf", "glb"]) 
+                                        .add_filter("3D Models", &["stl", "3mf", "obj", "gltf", "glb"]) 
                                         .pick_file()
                                     {
                                         let txc = self.tx.clone();
@@ -249,6 +261,9 @@ mod render {
                                                 }
                                             }
                                         });
+                                        if let Some(obj) = &mut self.object {
+                                            obj.set_local_scale(0.0, 0.0, 0.0);
+                                        }
                                         self.animate = true;
                                         self.loading = true;
                                     }
@@ -300,6 +315,9 @@ mod render {
         }
 
         let mut camera = FixedCenterCamera::new(base_camera, center, dist_step_value, tx.clone(), registry.clone());
+        if initial_loading {
+            placeholder.set_local_scale(0.0, 0.0, 0.0);
+        }
         camera.set_object(placeholder);
         camera.set_loading(initial_loading);
         camera.set_animate(true);
@@ -358,8 +376,8 @@ mod render {
                 }
                 Ok(Err(err)) => {
                     eprintln!("{}", err);
-                    camera.set_loading(false);
                     camera.set_animate(true);
+                    camera.set_loading(false);
                     window.set_title("Mesh - Double-click to open");
                 }
                 Err(TryRecvError::Empty) => {}

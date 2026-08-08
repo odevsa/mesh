@@ -2,6 +2,7 @@ use std::path::Path;
 use std::io::Read;
 
 pub mod stl;
+pub mod threemf;
 pub mod obj;
 pub mod gltf;
 

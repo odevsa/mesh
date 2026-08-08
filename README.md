@@ -5,6 +5,7 @@ A lightweight desktop application to view 3D mesh files written in rust.
 ## Supported formats
 
 - STL
+- 3MF
 - OBJ
 - glTF (gltf/glb)
 
