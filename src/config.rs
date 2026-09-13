@@ -92,4 +92,14 @@ impl Config {
             Ok(c)
         }
     }
+
+    pub fn save(&self) -> Result<(), String> {
+        let p = Self::path().ok_or_else(|| "couldn't determine config path".to_string())?;
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("create dir: {}", e))?;
+        }
+        let s = serde_json::to_string_pretty(self).map_err(|e| format!("serialize cfg: {}", e))?;
+        std::fs::write(&p, s).map_err(|e| format!("write cfg: {}", e))?;
+        Ok(())
+    }
 }
