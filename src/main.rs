@@ -267,6 +267,9 @@ mod render {
             tx: std::sync::mpsc::Sender<Result<MeshData, String>>,
             loading: bool,
             should_close: bool,
+            smooth_orbit: bool,
+            vel_yaw: f32,
+            vel_pitch: f32,
         }
 
         impl FixedCenterCamera {
@@ -277,6 +280,7 @@ mod render {
                 light_node: kiss3d::scene::SceneNode3d,
                 tx: std::sync::mpsc::Sender<Result<MeshData, String>>,
                 loader: std::sync::Arc<loader::LoaderRegistry>,
+                smooth_orbit: bool,
             ) -> Self {
                 Self {
                     inner,
@@ -291,6 +295,9 @@ mod render {
                     tx,
                     loading: false,
                     should_close: false,
+                    smooth_orbit,
+                    vel_yaw: 0.0,
+                    vel_pitch: 0.0,
                 }
             }
 
@@ -352,6 +359,11 @@ mod render {
                                 self.inner.set_yaw(new_yaw);
                                 self.inner.set_pitch(new_pitch);
                                 self.inner.set_at(self.center);
+
+                                if self.smooth_orbit {
+                                    self.vel_yaw = self.vel_yaw * 0.4 + dx * 0.006;
+                                    self.vel_pitch = self.vel_pitch * 0.4 - dy * 0.006;
+                                }
                             }
                             self.last_cursor = Some((x, y));
                         } else {
@@ -362,6 +374,8 @@ mod render {
                         if *btn == MouseButton::Button1 {
                             use std::time::{Instant, Duration};
                             if *act == Action::Press {
+                                self.vel_yaw = 0.0;
+                                self.vel_pitch = 0.0;
                                 let now = Instant::now();
                                 let mut double = false;
                                 if let Some(last) = self.last_click {
@@ -426,6 +440,28 @@ mod render {
             fn transformation(&self) -> kiss3d::glamx::Mat4 { self.inner.transformation() }
             fn inverse_transformation(&self) -> kiss3d::glamx::Mat4 { self.inner.inverse_transformation() }
             fn update(&mut self, canvas: &Canvas) {
+                if self.smooth_orbit {
+                    if self.dragging {
+                        self.vel_yaw *= 0.85;
+                        self.vel_pitch *= 0.85;
+                    } else if self.vel_yaw.abs() > 1e-5 || self.vel_pitch.abs() > 1e-5 {
+                        let new_yaw = self.inner.yaw() + self.vel_yaw;
+                        let unconstrained_pitch = self.inner.pitch() + self.vel_pitch;
+                        let new_pitch = unconstrained_pitch.clamp(0.01, std::f32::consts::PI - 0.01);
+                        if (unconstrained_pitch - new_pitch).abs() > 1e-5 {
+                            self.vel_pitch = 0.0;
+                        }
+                        self.inner.set_yaw(new_yaw);
+                        self.inner.set_pitch(new_pitch);
+                        self.inner.set_at(self.center);
+
+                        self.vel_yaw *= 0.92;
+                        self.vel_pitch *= 0.92;
+                    } else {
+                        self.vel_yaw = 0.0;
+                        self.vel_pitch = 0.0;
+                    }
+                }
                 self.inner.update(canvas);
                 let eye = self.inner.eye();
                 self.inner.look_at(eye, self.center);
@@ -433,7 +469,7 @@ mod render {
             }
         }
 
-        let mut camera = FixedCenterCamera::new(base_camera, center, dist_step_value, light_node, tx.clone(), registry.clone());
+        let mut camera = FixedCenterCamera::new(base_camera, center, dist_step_value, light_node, tx.clone(), registry.clone(), cfg.smooth_orbit);
         if initial_loading {
             placeholder.set_local_scale(0.0, 0.0, 0.0);
         }
