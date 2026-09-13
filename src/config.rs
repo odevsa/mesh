@@ -18,6 +18,8 @@ pub struct Config {
     pub grid_size: f32,
     pub grid_divisions: u32,
     pub grid_color: [u8; 3],
+    pub show_axes: [bool; 3],
+    pub show_axis_direction: bool,
 }
 
 impl Default for Config {
@@ -37,6 +39,8 @@ impl Default for Config {
             grid_size: 2.0,
             grid_divisions: 10,
             grid_color: [0x11, 0x11, 0x11],
+            show_axes: [true, true, false],
+            show_axis_direction: true,
         }
     }
 }
