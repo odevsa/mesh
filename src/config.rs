@@ -14,6 +14,10 @@ pub struct Config {
     pub invert_scroll: bool,
     pub scroll_min: f32,
     pub scroll_max: f32,
+    pub show_grid: bool,
+    pub grid_size: f32,
+    pub grid_divisions: u32,
+    pub grid_color: [u8; 3],
 }
 
 impl Default for Config {
@@ -24,11 +28,15 @@ impl Default for Config {
             light_color: [0xCC, 0xCC, 0xCC],
             shadow_color: [0x00, 0x00, 0x00],
             object_scale: 1.0,
-            camera_eye: [0.0, -1.5, 1.5],
-            scroll_speed: 0.005,
+            camera_eye: [1.5, 1.5, 1.5],
+            scroll_speed: 0.01,
             invert_scroll: false,
             scroll_min: 0.5,
             scroll_max: 5.0,
+            show_grid: true,
+            grid_size: 2.0,
+            grid_divisions: 10,
+            grid_color: [0x11, 0x11, 0x11],
         }
     }
 }

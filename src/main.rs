@@ -65,6 +65,50 @@ mod render {
     use kiss3d::glamx::Vec3;
     use pollster;
 
+    fn build_grid(
+        scene_root: &mut kiss3d::scene::SceneNode3d,
+        half_size: f32,
+        divisions: u32,
+        color: kiss3d::color::Color,
+    ) {
+        let n = divisions + 1;
+        let step = (half_size * 2.0) / divisions as f32;
+
+        let mut positions: Vec<Vec3> = Vec::new();
+        let mut indices: Vec<[u32; 3]> = Vec::new();
+
+        for i in 0..=divisions {
+            let x = -half_size + i as f32 * step;
+            let i0 = positions.len() as u32;
+            positions.push(Vec3::new(x, -half_size, 0.0));
+            positions.push(Vec3::new(x,  half_size, 0.0));
+            positions.push(Vec3::new(x, -half_size, 0.0));
+            indices.push([i0, i0 + 1, i0 + 2]);
+        }
+
+        for j in 0..=divisions {
+            let y = -half_size + j as f32 * step;
+            let i0 = positions.len() as u32;
+            positions.push(Vec3::new(-half_size, y, 0.0));
+            positions.push(Vec3::new( half_size, y, 0.0));
+            positions.push(Vec3::new(-half_size, y, 0.0));
+            indices.push([i0, i0 + 1, i0 + 2]);
+        }
+
+        let _ = n;
+
+        let mut grid_node = scene_root.add_trimesh(
+            positions,
+            indices,
+            Vec3::new(1.0, 1.0, 1.0),
+            false,
+        );
+        grid_node.set_surface_rendering_activation(false);
+        grid_node.set_lines_color(Some(color));
+        grid_node.set_lines_width(1.0, false);
+
+    }
+
     pub fn run(
         rx: std::sync::mpsc::Receiver<Result<MeshData, String>>,
         tx: std::sync::mpsc::Sender<Result<MeshData, String>>,
@@ -89,6 +133,16 @@ mod render {
 
         let mut scene_root = kiss3d::scene::SceneNode3d::empty();
 
+        if cfg.show_grid {
+            let grid_color = kiss3d::color::Color::new(
+                cfg.grid_color[0] as f32 / 255.0,
+                cfg.grid_color[1] as f32 / 255.0,
+                cfg.grid_color[2] as f32 / 255.0,
+                1.0,
+            );
+            build_grid(&mut scene_root, cfg.grid_size, cfg.grid_divisions, grid_color);
+        }
+
         let scaled_light_radius = cfg.object_scale * 5.0;
 
         let node_color = kiss3d::color::Color::new(
@@ -109,9 +163,12 @@ mod render {
         base_camera.rebind_reset_key(None);
         base_camera.set_min_dist(cfg.scroll_min);
         base_camera.set_max_dist(cfg.scroll_max);
+        base_camera.set_up_axis(Vec3::new(0.0, 0.0, 1.0));
 
-        let light = kiss3d::light::Light::point(scaled_light_radius * 2.0);
-        scene_root.add_light(light).set_position(eye);
+        let light_node = {
+            let light = kiss3d::light::Light::point(scaled_light_radius * 2.0);
+            scene_root.add_light(light)
+        };
 
         let dist_step_value: f32 = 1.0 + (cfg.scroll_speed * if cfg.invert_scroll { 1.0 } else { -1.0 });
         base_camera.set_dist_step(dist_step_value);
@@ -121,9 +178,9 @@ mod render {
             center: Vec3,
             dist_step: f32,
             object: Option<kiss3d::scene::SceneNode3d>,
+            light_node: kiss3d::scene::SceneNode3d,
             last_cursor: Option<(f32, f32)>,
             dragging: bool,
-            animate: bool,
             last_click: Option<std::time::Instant>,
             loader: std::sync::Arc<loader::LoaderRegistry>,
             tx: std::sync::mpsc::Sender<Result<MeshData, String>>,
@@ -136,6 +193,7 @@ mod render {
                 inner: OrbitCamera3d,
                 center: Vec3,
                 dist_step: f32,
+                light_node: kiss3d::scene::SceneNode3d,
                 tx: std::sync::mpsc::Sender<Result<MeshData, String>>,
                 loader: std::sync::Arc<loader::LoaderRegistry>,
             ) -> Self {
@@ -144,9 +202,9 @@ mod render {
                     center,
                     dist_step,
                     object: None,
+                    light_node,
                     last_cursor: None,
                     dragging: false,
-                    animate: true,
                     last_click: None,
                     loader,
                     tx,
@@ -162,21 +220,11 @@ mod render {
                 self.object = Some(obj);
             }
 
-            fn set_animate(&mut self, v: bool) {
-                self.animate = v;
-            }
-
             fn set_loading(&mut self, v: bool) {
                 self.loading = v;
                 if v {
                     if let Some(obj) = &mut self.object {
                         obj.set_local_scale(0.0, 0.0, 0.0);
-                    }
-                } else {
-                    if let Some(obj) = &mut self.object {
-                        if self.animate {
-                            obj.set_local_scale(0.5, 0.5, 0.5);
-                        }
                     }
                 }
             }
@@ -217,15 +265,12 @@ mod render {
                                 let dx = x - lx;
                                 let dy = y - ly;
 
-                                if let Some(obj) = &mut self.object {
-                                    let ang_y = dx * 0.01;
-                                    let ang_x = dy * 0.01;
-                                    use kiss3d::glamx::{Quat, Vec3 as GVec3};
-                                    let qy = Quat::from_axis_angle(GVec3::Y, ang_y);
-                                    let qx = Quat::from_axis_angle(GVec3::X, ang_x);
-                                    let q = qy * qx;
-                                    obj.append_rotation(q);
-                                }
+                                let new_yaw = self.inner.yaw() + dx * 0.01;
+                                let new_pitch = (self.inner.pitch() - dy * 0.01)
+                                    .clamp(0.01, std::f32::consts::PI - 0.01);
+                                self.inner.set_yaw(new_yaw);
+                                self.inner.set_pitch(new_pitch);
+                                self.inner.set_at(self.center);
                             }
                             self.last_cursor = Some((x, y));
                         } else {
@@ -264,7 +309,6 @@ mod render {
                                         if let Some(obj) = &mut self.object {
                                             obj.set_local_scale(0.0, 0.0, 0.0);
                                         }
-                                        self.animate = true;
                                         self.loading = true;
                                     }
                                 } else {
@@ -304,23 +348,16 @@ mod render {
                 self.inner.update(canvas);
                 let eye = self.inner.eye();
                 self.inner.look_at(eye, self.center);
-                if self.animate {
-                    if let Some(obj) = &mut self.object {
-                        use kiss3d::glamx::{Quat, Vec3 as GVec3};
-                        let q = Quat::from_axis_angle(GVec3::Y, 0.01);
-                        obj.append_rotation(q);
-                    }
-                }
+                self.light_node.set_position(eye);
             }
         }
 
-        let mut camera = FixedCenterCamera::new(base_camera, center, dist_step_value, tx.clone(), registry.clone());
+        let mut camera = FixedCenterCamera::new(base_camera, center, dist_step_value, light_node, tx.clone(), registry.clone());
         if initial_loading {
             placeholder.set_local_scale(0.0, 0.0, 0.0);
         }
         camera.set_object(placeholder);
         camera.set_loading(initial_loading);
-        camera.set_animate(true);
 
         
 
@@ -371,12 +408,10 @@ mod render {
                     node.set_local_scale(scale_factor, scale_factor, scale_factor);
 
                     camera.set_object(node);
-                    camera.set_animate(false);
                     camera.set_loading(false);
                 }
                 Ok(Err(err)) => {
                     eprintln!("{}", err);
-                    camera.set_animate(true);
                     camera.set_loading(false);
                     window.set_title("Mesh - Double-click to open");
                 }
