@@ -2,6 +2,10 @@
 
 A lightweight desktop application to view 3D mesh files written in rust.
 
+<p align="center">
+  <img src="assets/screenshot.png" alt="Screenshot" />
+</p>
+
 ## Supported formats
 
 - STL
