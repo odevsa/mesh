@@ -6,7 +6,7 @@ mod config;
 use rfd::FileDialog;
 use std::path::PathBuf;
 use loader::{LoaderRegistry, MeshData};
-use config::Config;
+use config::{Config, ModelPosition};
 
 fn main() {
     let arg_path: Option<PathBuf> = std::env::args().nth(1).map(PathBuf::from);
@@ -64,6 +64,15 @@ mod render {
     use kiss3d::camera::OrbitCamera3d;
     use kiss3d::glamx::{Pose3, Quat, Vec3};
     use pollster;
+
+    pub(crate) fn compute_model_z_offset(position: ModelPosition, model_height: f32, scale: f32) -> f32 {
+        let half_height = (model_height * scale) / 2.0;
+        match position {
+            ModelPosition::Above => half_height,
+            ModelPosition::Center => 0.0,
+            ModelPosition::Below => -half_height,
+        }
+    }
 
     fn build_grid(
         scene_root: &mut kiss3d::scene::SceneNode3d,
@@ -293,7 +302,20 @@ mod render {
             self.loading
         }
 
+        fn center(&self) -> Vec3 {
+            self.center
+        }
+
+        fn set_center(&mut self, new_center: Vec3) {
+            let delta = new_center - self.center;
+            self.center = new_center;
+            let new_eye = self.inner.eye() + delta;
+            self.inner.look_at(new_eye, self.center);
+            self.inner.set_at(self.center);
+        }
+
         fn reset_view(&mut self, eye: Vec3, center: Vec3) {
+            self.center = center;
             self.inner.look_at(eye, center);
             self.inner.set_at(center);
             self.vel_yaw = 0.0;
@@ -453,7 +475,7 @@ mod render {
         let mut window = if initial_loading {
             pollster::block_on(Window::new("Mesh - Loading..."))
         } else {
-            pollster::block_on(Window::new("Mesh - Double-click or Right-click for Menu"))
+            pollster::block_on(Window::new("Mesh"))
         };
         window.set_background_color(kiss3d::color::Color::new(
             cfg.background[0] as f32 / 255.0,
@@ -492,12 +514,21 @@ mod render {
             1.0,
         );
 
-        let center: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+        let mut base_scale_factor: f32 = 1.0;
+        let mut current_model_size = Vec3::new(0.5, 0.5, 0.5);
+
+        let initial_z_offset = compute_model_z_offset(
+            cfg.model_position,
+            current_model_size.z,
+            cfg.object_scale * base_scale_factor,
+        );
+        let center: Vec3 = Vec3::new(0.0, 0.0, initial_z_offset);
 
         let mut placeholder = scene_root.add_cube(0.5, 0.5, 0.5);
         placeholder.set_color(node_color);
+        placeholder.set_position(center);
 
-        let eye = Vec3::new(cfg.camera_eye[0], cfg.camera_eye[1], cfg.camera_eye[2]);
+        let eye = center + Vec3::new(cfg.camera_eye[0], cfg.camera_eye[1], cfg.camera_eye[2]);
         let mut base_camera = OrbitCamera3d::new(eye, center);
         base_camera.rebind_drag_button(None);
         base_camera.rebind_reset_key(None);
@@ -521,7 +552,6 @@ mod render {
         camera.set_loading(initial_loading);
 
         let mut last_was_loading = false;
-        let mut base_scale_factor: f32 = 1.0;
         let mut menu_pos = egui::pos2(120.0, 120.0);
 
         while pollster::block_on(window.render_3d(&mut scene_root, &mut camera)) {
@@ -533,7 +563,7 @@ mod render {
                 if now_loading {
                     window.set_title("Mesh - Loading...");
                 } else {
-                    window.set_title("Mesh - Double-click or Right-click for Menu");
+                    window.set_title("Mesh");
                 }
                 last_was_loading = now_loading;
             }
@@ -551,6 +581,7 @@ mod render {
             let mut bg_changed = false;
             let mut obj_color_changed = false;
             let mut scale_changed = false;
+            let mut position_changed = false;
             let mut grid_rebuild = false;
             let mut axes_rebuild = false;
             let mut controls_changed = false;
@@ -597,20 +628,44 @@ mod render {
                                                 }
                                             });
                                         }
+
+                                        ui.horizontal(|ui| {
+                                            ui.label("Model Position:");
+                                            egui::ComboBox::from_id_salt("model_position")
+                                                .selected_text(match cfg.model_position {
+                                                    ModelPosition::Above => "Above",
+                                                    ModelPosition::Center => "Center",
+                                                    ModelPosition::Below => "Below",
+                                                })
+                                                .show_ui(ui, |ui| {
+                                                    if ui.selectable_value(&mut cfg.model_position, ModelPosition::Above, "Above").changed() {
+                                                        config_changed = true;
+                                                        position_changed = true;
+                                                    }
+                                                    if ui.selectable_value(&mut cfg.model_position, ModelPosition::Center, "Center").changed() {
+                                                        config_changed = true;
+                                                        position_changed = true;
+                                                    }
+                                                    if ui.selectable_value(&mut cfg.model_position, ModelPosition::Below, "Below").changed() {
+                                                        config_changed = true;
+                                                        position_changed = true;
+                                                    }
+                                                });
+                                        });
                                     });
 
                                     ui.collapsing("Coordinate Axes", |ui| {
                                         ui.label("Axes Visibility:");
                                         ui.horizontal(|ui| {
-                                            if ui.checkbox(&mut cfg.show_axes[0], "X (Red)").changed() {
+                                            if ui.checkbox(&mut cfg.show_axes[0], "X").changed() {
                                                 config_changed = true;
                                                 axes_rebuild = true;
                                             }
-                                            if ui.checkbox(&mut cfg.show_axes[1], "Y (Green)").changed() {
+                                            if ui.checkbox(&mut cfg.show_axes[1], "Y").changed() {
                                                 config_changed = true;
                                                 axes_rebuild = true;
                                             }
-                                            if ui.checkbox(&mut cfg.show_axes[2], "Z (Blue)").changed() {
+                                            if ui.checkbox(&mut cfg.show_axes[2], "Z").changed() {
                                                 config_changed = true;
                                                 axes_rebuild = true;
                                             }
@@ -664,11 +719,12 @@ mod render {
                                         camera.menu_open = false;
                                     }
 
-                                    ui.separator();
-
+                                    
                                     if ui.add(egui::Button::new("Reset Defaults").frame(false)).clicked() {
                                         reset_defaults_requested = true;
                                     }
+                                    
+                                    ui.separator();
 
                                     if ui.add(egui::Button::new("Exit").frame(false)).clicked() {
                                         close_app_requested = true;
@@ -678,7 +734,7 @@ mod render {
 
                     if ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) {
                         if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                            if !area_resp.response.rect.contains(pos) {
+                            if !area_resp.response.rect.contains(pos) && !ctx.is_pointer_over_egui() {
                                 camera.menu_open = false;
                             }
                         }
@@ -691,7 +747,9 @@ mod render {
             }
 
             if reset_camera_requested {
-                camera.reset_view(Vec3::new(cfg.camera_eye[0], cfg.camera_eye[1], cfg.camera_eye[2]), center);
+                let eye_offset = Vec3::new(cfg.camera_eye[0], cfg.camera_eye[1], cfg.camera_eye[2]);
+                let current_center = camera.center();
+                camera.reset_view(current_center + eye_offset, current_center);
             }
 
             if reset_defaults_requested {
@@ -700,6 +758,7 @@ mod render {
                 bg_changed = true;
                 obj_color_changed = true;
                 scale_changed = true;
+                position_changed = true;
                 grid_rebuild = true;
                 axes_rebuild = true;
                 controls_changed = true;
@@ -736,11 +795,17 @@ mod render {
                 }
             }
 
-            if scale_changed {
+            if scale_changed || position_changed {
                 let actual_scale = cfg.object_scale * base_scale_factor;
+                let z_offset = compute_model_z_offset(cfg.model_position, current_model_size.z, actual_scale);
+                let new_center = Vec3::new(0.0, 0.0, z_offset);
                 if let Some(obj) = camera.object_mut() {
-                    obj.set_local_scale(actual_scale, actual_scale, actual_scale);
+                    if scale_changed {
+                        obj.set_local_scale(actual_scale, actual_scale, actual_scale);
+                    }
+                    obj.set_position(new_center);
                 }
+                camera.set_center(new_center);
             }
 
             if grid_rebuild || axes_rebuild {
@@ -802,22 +867,47 @@ mod render {
                     node.set_color(current_color);
 
                     let size = (max - min).abs();
+                    current_model_size = size;
                     let max_dim = size.x.max(size.y).max(size.z).max(1e-6);
                     base_scale_factor = 1.0 / max_dim;
                     let scale_factor = cfg.object_scale * base_scale_factor;
                     node.set_local_scale(scale_factor, scale_factor, scale_factor);
 
+                    let z_offset = compute_model_z_offset(cfg.model_position, current_model_size.z, scale_factor);
+                    let model_center = Vec3::new(0.0, 0.0, z_offset);
+                    node.set_position(model_center);
+
                     camera.set_object(node);
                     camera.set_loading(false);
+                    camera.set_center(model_center);
                 }
                 Ok(Err(err)) => {
                     eprintln!("{}", err);
                     camera.set_loading(false);
-                    window.set_title("Mesh - Double-click or Right-click for Menu");
+                    window.set_title("Mesh");
                 }
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_model_z_offset() {
+        let height = 2.0;
+        let scale = 1.0;
+        assert_eq!(render::compute_model_z_offset(ModelPosition::Center, height, scale), 0.0);
+        assert_eq!(render::compute_model_z_offset(ModelPosition::Above, height, scale), 1.0);
+        assert_eq!(render::compute_model_z_offset(ModelPosition::Below, height, scale), -1.0);
+
+        let scale = 2.5;
+        assert_eq!(render::compute_model_z_offset(ModelPosition::Center, height, scale), 0.0);
+        assert_eq!(render::compute_model_z_offset(ModelPosition::Above, height, scale), 2.5);
+        assert_eq!(render::compute_model_z_offset(ModelPosition::Below, height, scale), -2.5);
     }
 }

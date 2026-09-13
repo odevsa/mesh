@@ -3,7 +3,8 @@
 A lightweight desktop application to view 3D mesh files written in rust.
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="Screenshot" />
+  <img src="assets/screenshot-1.png" alt="Screenshot" width="45%" />
+  <img src="assets/screenshot-2.png" alt="Screenshot" width="45%" />
 </p>
 
 ## Supported formats
