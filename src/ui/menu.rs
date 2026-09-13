@@ -20,6 +20,25 @@ pub struct UiResponse {
     pub close_menu_requested: bool,
 }
 
+fn menu_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let width = ui.available_width();
+    ui.add(
+        egui::Button::new(text)
+            .min_size(egui::vec2(width, 0.0))
+            .frame_when_inactive(false),
+    )
+}
+
+fn menu_button_enabled(ui: &mut egui::Ui, enabled: bool, text: &str) -> egui::Response {
+    let width = ui.available_width();
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(text)
+            .min_size(egui::vec2(width, 0.0))
+            .frame_when_inactive(false),
+    )
+}
+
 pub fn render_context_menu(
     ctx: &Context,
     menu_pos: Pos2,
@@ -38,13 +57,16 @@ pub fn render_context_menu(
                 .shadow(egui::Shadow::NONE)
                 .show(ui, |ui| {
                     ui.spacing_mut().slider_width = 80.0;
+                    ui.spacing_mut().button_padding = egui::vec2(8.0, 4.0);
+                    ui.visuals_mut().widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                    ui.visuals_mut().widgets.active.bg_stroke = egui::Stroke::NONE;
 
-                    if ui.add(egui::Button::new("Load 3D Model").frame(false)).clicked() {
+                    if menu_button(ui, "Load 3D Model").clicked() {
                         resp.open_file_dialog = true;
                         resp.close_menu_requested = true;
                     }
 
-                    if ui.add_enabled(has_model, egui::Button::new("Unload 3D Model").frame(false)).clicked() {
+                    if menu_button_enabled(ui, has_model, "Unload 3D Model").clicked() {
                         resp.unload_model_requested = true;
                         resp.close_menu_requested = true;
                     }
@@ -163,18 +185,18 @@ pub fn render_context_menu(
 
                     ui.separator();
 
-                    if ui.add(egui::Button::new("Reset Camera").frame(false)).clicked() {
+                    if menu_button(ui, "Reset Camera").clicked() {
                         resp.reset_camera_requested = true;
                         resp.close_menu_requested = true;
                     }
 
-                    if ui.add(egui::Button::new("Reset Defaults").frame(false)).clicked() {
+                    if menu_button(ui, "Reset Defaults").clicked() {
                         resp.reset_defaults_requested = true;
                     }
 
                     ui.separator();
 
-                    if ui.add(egui::Button::new("Exit").frame(false)).clicked() {
+                    if menu_button(ui, "Exit").clicked() {
                         resp.close_app_requested = true;
                     }
                 });
