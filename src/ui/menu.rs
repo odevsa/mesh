@@ -4,6 +4,7 @@ use egui::{Context, Pos2};
 #[derive(Default)]
 pub struct UiResponse {
     pub open_file_dialog: bool,
+    pub unload_model_requested: bool,
     pub reset_camera_requested: bool,
     pub reset_defaults_requested: bool,
     pub close_app_requested: bool,
@@ -23,6 +24,7 @@ pub fn render_context_menu(
     ctx: &Context,
     menu_pos: Pos2,
     cfg: &mut Config,
+    has_model: bool,
 ) -> UiResponse {
     let mut resp = UiResponse::default();
 
@@ -39,6 +41,11 @@ pub fn render_context_menu(
 
                     if ui.add(egui::Button::new("Load 3D Model").frame(false)).clicked() {
                         resp.open_file_dialog = true;
+                        resp.close_menu_requested = true;
+                    }
+
+                    if ui.add_enabled(has_model, egui::Button::new("Unload 3D Model").frame(false)).clicked() {
+                        resp.unload_model_requested = true;
                         resp.close_menu_requested = true;
                     }
 

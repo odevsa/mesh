@@ -4,6 +4,7 @@ use crate::dialog;
 use crate::loader::{LoaderRegistry, MeshData};
 use crate::scene::{axes, grid, model};
 use crate::ui::menu::{render_context_menu, UiResponse};
+use crate::ui::overlay;
 use kiss3d::camera::OrbitCamera3d;
 use kiss3d::color::Color;
 use kiss3d::glamx::Vec3;
@@ -207,20 +208,41 @@ impl App {
         let menu_open = self.camera.menu_open;
         let menu_pos = self.menu_pos;
         let cfg = &mut self.cfg;
+        let is_loading = self.camera.is_loading();
+        let has_model = self.has_model;
+
         self.window.draw_ui(|ctx| {
+            if is_loading {
+                overlay::render_loading_overlay(ctx);
+            } else if !has_model && overlay::render_empty_overlay(ctx) {
+                ui_resp.open_file_dialog = true;
+                ui_resp.close_menu_requested = true;
+            }
+
             if menu_open {
-                ui_resp = render_context_menu(ctx, menu_pos, cfg);
+                let menu_resp = render_context_menu(ctx, menu_pos, cfg, has_model);
+                let open_dialog = ui_resp.open_file_dialog || menu_resp.open_file_dialog;
+                let close_menu = ui_resp.close_menu_requested || menu_resp.close_menu_requested;
+                ui_resp = menu_resp;
+                ui_resp.open_file_dialog = open_dialog;
+                ui_resp.close_menu_requested = close_menu;
             }
         });
+
         if ui_resp.close_menu_requested {
             self.camera.menu_open = false;
         }
+
         ui_resp
     }
 
     fn apply_ui_response(&mut self, resp: UiResponse) {
         if resp.open_file_dialog {
             self.trigger_file_dialog();
+        }
+
+        if resp.unload_model_requested {
+            self.unload_model();
         }
 
         if resp.reset_camera_requested {
@@ -273,6 +295,39 @@ impl App {
                 }
             }
         }
+    }
+
+    fn unload_model(&mut self) {
+        self.has_model = false;
+        self.base_scale_factor = 1.0;
+        self.current_model_size = Vec3::new(0.5, 0.5, 0.5);
+
+        let actual_scale = self.cfg.object_scale * self.base_scale_factor;
+        let z_offset = model::compute_model_z_offset(
+            self.cfg.model_position,
+            self.current_model_size.z,
+            actual_scale,
+        );
+        let center = Vec3::new(0.0, 0.0, z_offset);
+
+        let node_color = Color::new(
+            self.cfg.object_color[0] as f32 / 255.0,
+            self.cfg.object_color[1] as f32 / 255.0,
+            self.cfg.object_color[2] as f32 / 255.0,
+            1.0,
+        );
+
+        let mut placeholder = self.scene_root.add_cube(0.5, 0.5, 0.5);
+        placeholder.set_color(node_color);
+        placeholder.set_position(center);
+        placeholder.set_local_scale(actual_scale, actual_scale, actual_scale);
+        if !self.cfg.show_dummy_box {
+            placeholder.set_visible(false);
+        }
+
+        self.camera.set_object(placeholder);
+        self.camera.set_center(center);
+        self.window.set_title("Mesh");
     }
 
     fn reset_camera(&mut self) {
