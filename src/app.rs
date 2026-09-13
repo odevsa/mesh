@@ -26,6 +26,7 @@ pub struct App {
     current_model_size: Vec3,
     last_was_loading: bool,
     menu_pos: egui::Pos2,
+    has_model: bool,
 }
 
 impl App {
@@ -125,6 +126,9 @@ impl App {
         if initial_loading {
             placeholder.set_local_scale(0.0, 0.0, 0.0);
         }
+        if !cfg.show_dummy_box {
+            placeholder.set_visible(false);
+        }
         camera.set_object(placeholder);
         camera.set_loading(initial_loading);
 
@@ -142,6 +146,7 @@ impl App {
             current_model_size,
             last_was_loading: false,
             menu_pos: egui::pos2(120.0, 120.0),
+            has_model: false,
         }
     }
 
@@ -255,6 +260,19 @@ impl App {
         if resp.controls_changed {
             self.apply_controls_settings();
         }
+
+        if resp.dummy_box_changed && !self.has_model {
+            let is_loading = self.camera.is_loading();
+            if let Some(obj) = self.camera.object_mut() {
+                if self.cfg.show_dummy_box {
+                    let actual_scale = self.cfg.object_scale * self.base_scale_factor;
+                    obj.set_local_scale(actual_scale, actual_scale, actual_scale);
+                    obj.set_visible(!is_loading);
+                } else {
+                    obj.set_visible(false);
+                }
+            }
+        }
     }
 
     fn reset_camera(&mut self) {
@@ -275,6 +293,18 @@ impl App {
         self.update_model_transform(true);
         self.rebuild_grid_and_axes();
         self.apply_controls_settings();
+        if !self.has_model {
+            let is_loading = self.camera.is_loading();
+            if let Some(obj) = self.camera.object_mut() {
+                if self.cfg.show_dummy_box {
+                    let actual_scale = self.cfg.object_scale * self.base_scale_factor;
+                    obj.set_local_scale(actual_scale, actual_scale, actual_scale);
+                    obj.set_visible(!is_loading);
+                } else {
+                    obj.set_visible(false);
+                }
+            }
+        }
     }
 
     fn apply_background_color(&mut self) {
@@ -393,11 +423,23 @@ impl App {
                 self.camera.set_object(node);
                 self.camera.set_loading(false);
                 self.camera.set_center(model_center);
+                self.has_model = true;
             }
             Ok(Err(err)) => {
                 eprintln!("{}", err);
                 self.camera.set_loading(false);
                 self.window.set_title("Mesh");
+                if !self.has_model {
+                    if let Some(obj) = self.camera.object_mut() {
+                        if self.cfg.show_dummy_box {
+                            let actual_scale = self.cfg.object_scale * self.base_scale_factor;
+                            obj.set_local_scale(actual_scale, actual_scale, actual_scale);
+                            obj.set_visible(true);
+                        } else {
+                            obj.set_visible(false);
+                        }
+                    }
+                }
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {}

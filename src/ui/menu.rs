@@ -15,6 +15,7 @@ pub struct UiResponse {
     pub grid_rebuild: bool,
     pub axes_rebuild: bool,
     pub controls_changed: bool,
+    pub dummy_box_changed: bool,
     pub close_menu_requested: bool,
 }
 
@@ -131,6 +132,10 @@ pub fn render_context_menu(
                     });
 
                     ui.collapsing("Controls & Scale", |ui| {
+                        if ui.checkbox(&mut cfg.show_dummy_box, "Show Dummy Box").changed() {
+                            resp.config_changed = true;
+                            resp.dummy_box_changed = true;
+                        }
                         if ui.add(egui::Slider::new(&mut cfg.object_scale, 0.1..=10.0).text("Scale")).changed() {
                             resp.config_changed = true;
                             resp.scale_changed = true;

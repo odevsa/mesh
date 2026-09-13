@@ -34,6 +34,7 @@ pub struct Config {
     pub show_axes: [bool; 3],
     pub show_axis_direction: bool,
     pub model_position: ModelPosition,
+    pub show_dummy_box: bool,
 }
 
 impl Default for Config {
@@ -57,6 +58,7 @@ impl Default for Config {
             show_axes: [true, true, false],
             show_axis_direction: true,
             model_position: ModelPosition::Above,
+            show_dummy_box: false,
         }
     }
 }

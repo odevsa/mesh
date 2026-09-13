@@ -8,10 +8,12 @@ pub fn build_axes(
     show_axes: [bool; 3],
     show_axis_direction: bool,
 ) -> SceneNode3d {
+    let cone_size = 0.1;
+    let cone_position = half_size + (cone_size/2.0);
     let mut axes_root = scene_root.add_group();
     let axis_width = 2.5;
-    let cone_r = half_size * 0.025;
-    let cone_h = half_size * 0.08;
+    let cone_r = cone_size * 0.25;
+    let cone_h = cone_size;
 
     if show_axes[0] {
         let x_color = Color::new(246.0 / 255.0, 54.0 / 255.0, 82.0 / 255.0, 1.0);
@@ -30,7 +32,7 @@ pub fn build_axes(
             let rot_x = Quat::from_axis_angle(Vec3::Z, -std::f32::consts::FRAC_PI_2);
             let mut cone = axes_root.add_cone(cone_r, cone_h);
             cone.set_color(x_color);
-            cone.set_pose(Pose3::from_parts(Vec3::new(half_size, 0.0, 0.0), rot_x));
+            cone.set_pose(Pose3::from_parts(Vec3::new(cone_position, 0.0, 0.0), rot_x));
         }
     }
 
@@ -50,7 +52,7 @@ pub fn build_axes(
         if show_axis_direction {
             let mut cone = axes_root.add_cone(cone_r, cone_h);
             cone.set_color(y_color);
-            cone.set_pose(Pose3::from_parts(Vec3::new(0.0, half_size, 0.0), Quat::IDENTITY));
+            cone.set_pose(Pose3::from_parts(Vec3::new(0.0, cone_position, 0.0), Quat::IDENTITY));
         }
     }
 
@@ -71,7 +73,7 @@ pub fn build_axes(
             let rot_z = Quat::from_axis_angle(Vec3::X, std::f32::consts::FRAC_PI_2);
             let mut cone = axes_root.add_cone(cone_r, cone_h);
             cone.set_color(z_color);
-            cone.set_pose(Pose3::from_parts(Vec3::new(0.0, 0.0, half_size), rot_z));
+            cone.set_pose(Pose3::from_parts(Vec3::new(0.0, 0.0, cone_position), rot_z));
         }
     }
 
