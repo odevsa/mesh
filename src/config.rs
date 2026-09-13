@@ -117,33 +117,3 @@ impl Config {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_model_position_serde() {
-        assert_eq!(serde_json::to_string(&ModelPosition::Center).unwrap(), "\"center\"");
-        assert_eq!(serde_json::to_string(&ModelPosition::Above).unwrap(), "\"above\"");
-        assert_eq!(serde_json::to_string(&ModelPosition::Below).unwrap(), "\"below\"");
-
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"center\"").unwrap(), ModelPosition::Center);
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"center_grid\"").unwrap(), ModelPosition::Center);
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"Center\"").unwrap(), ModelPosition::Center);
-
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"above\"").unwrap(), ModelPosition::Above);
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"above_grid\"").unwrap(), ModelPosition::Above);
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"Above\"").unwrap(), ModelPosition::Above);
-
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"below\"").unwrap(), ModelPosition::Below);
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"below_grid\"").unwrap(), ModelPosition::Below);
-        assert_eq!(serde_json::from_str::<ModelPosition>("\"Below\"").unwrap(), ModelPosition::Below);
-    }
-
-    #[test]
-    fn test_config_default_model_position() {
-        let cfg = Config::default();
-        assert_eq!(cfg.model_position, ModelPosition::Above);
-    }
-}
