@@ -7,17 +7,17 @@
 **A lightning-fast, lightweight 3D mesh viewer built with Rust.**
 
 [![Release](https://img.shields.io/github/v/release/odevsa/mesh?label=Release&style=flat-square&color=blue)](https://github.com/odevsa/mesh/releases)
-[![Rust](https://img.shields.io/badge/Rust-2024%20edition-blue?style=flat-square&logo=rust)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/Rust-2024%20Edition-blue?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 ![Build Linux](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-linux.yml?label=Linux&style=flat-square)
 [![Build Mac](https://img.shields.io/badge/Mac-Unavailable-lightgrey?style=flat-square)](#-download--installation)
 ![Build Windows](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-windows.yml?label=Windows&style=flat-square)
 
-[Features](#-key-features) •
-[Screenshots](#-screenshots) •
-[Formats](#-formats) •
-[Installation](#-installation) •
-[Building](#-building) •
-[Contributing](#-contributing)
+[Features](#features) •
+[Screenshots](#screenshots) •
+[Formats](#formats) •
+[Installation](#installation) •
+[Building](#building) •
+[Contributing](#contributing)
 
 <br/>
 
