@@ -2,7 +2,7 @@
 
 <img src="assets/icons/128x128/apps/mesh.png" alt="Mesh Logo" width="100" />
 
-<span style="font-size: 32px;">**Mesh**</span>
+<span style="font-size: 32px; font-weight: 700;">Mesh</span>
 
 **A lightning-fast, lightweight 3D mesh viewer built with Rust.**
 
