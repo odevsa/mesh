@@ -2,7 +2,7 @@
 
 <img src="assets/icons/128x128/apps/mesh.png" alt="Mesh Logo" width="100" />
 
-### **Mesh**
+**Mesh**
 
 **A simple and lightweight 3D mesh viewer written in Rust.**
 
@@ -78,13 +78,13 @@ Choose your preferred format:
   ```
 - **Tarball** (`.tar.xz`): Extract and run the `mesh` binary directly.
 
-### Windows
-
-- Download `mesh-*-x86_64-windows.exe` and double-click to run!
-
 ### Mac
 
 - Comming soon
+
+### Windows
+
+- Download `mesh-*-x86_64-windows.exe` and double-click to run!
 
 ## Usage
 
