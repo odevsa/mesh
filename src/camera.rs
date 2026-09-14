@@ -97,7 +97,43 @@ impl FixedCenterCamera {
         self.dragging = false;
         self.last_cursor = None;
     }
+
+    pub fn orbit_vertical(&mut self, delta: f32) {
+        let new_pitch = (self.inner.pitch() + delta)
+            .clamp(0.01, std::f32::consts::PI - 0.01);
+        self.inner.set_pitch(new_pitch);
+        self.inner.set_at(self.center);
+        if self.smooth_orbit {
+            self.vel_pitch = delta * 0.3;
+        }
+    }
+
+    pub fn orbit_horizontal(&mut self, delta: f32) {
+        let new_yaw = self.inner.yaw() + delta;
+        self.inner.set_yaw(new_yaw);
+        self.inner.set_at(self.center);
+        if self.smooth_orbit {
+            self.vel_yaw = delta * 0.3;
+        }
+    }
+
+    pub fn zoom(&mut self, zoom_in: bool) {
+        let mut factor = self.dist_step.powf(10.0);
+        if factor > 1.0 {
+            factor = 1.0 / factor;
+        }
+        let new_dist = if zoom_in {
+            self.inner.dist() * factor
+        } else {
+            self.inner.dist() / factor
+        }
+        .clamp(self.inner.min_dist(), self.inner.max_dist());
+
+        self.inner.set_dist(new_dist);
+        self.inner.set_at(self.center);
+    }
 }
+
 
 impl Camera3d for FixedCenterCamera {
     fn clip_planes(&self) -> (f32, f32) {
@@ -189,11 +225,48 @@ impl Camera3d for FixedCenterCamera {
                 }
             }
             WindowEvent::Key(k, act, _) => {
-                if *act == Action::Press && *k == Key::Escape {
-                    if self.menu_open {
-                        self.menu_open = false;
-                    } else {
-                        self.should_close = true;
+                if *act == Action::Press {
+                    match k {
+                        Key::Escape => {
+                            if self.menu_open {
+                                self.menu_open = false;
+                            } else {
+                                self.should_close = true;
+                            }
+                        }
+                        Key::Up => {
+                            if !self.menu_open {
+                                self.orbit_vertical(-0.05);
+                            }
+                        }
+                        Key::Down => {
+                            if !self.menu_open {
+                                self.orbit_vertical(0.05);
+                            }
+                        }
+                        Key::Left => {
+                            if !self.menu_open {
+                                self.orbit_horizontal(0.05);
+                            }
+                        }
+                        Key::Right => {
+                            if !self.menu_open {
+                                self.orbit_horizontal(-0.05);
+                            }
+                        }
+                        Key::Add | Key::Equals | Key::NumpadEquals => {
+                            if !self.menu_open {
+                                self.zoom(true);
+                            }
+                        }
+                        Key::Subtract | Key::Minus => {
+                            if !self.menu_open {
+                                self.zoom(false);
+                            }
+                        }
+                        _ => {
+                            self.inner.handle_event(canvas, event);
+                        }
                     }
                 } else {
                     self.inner.handle_event(canvas, event);
@@ -250,4 +323,3 @@ impl Camera3d for FixedCenterCamera {
         self.light_node.set_position(eye);
     }
 }
-

@@ -33,7 +33,7 @@
 
 - **Lightweight & Fast**: Built with Rust for quick startup and low memory usage.
 - **Multiple Formats**: Supports `.stl`, `.3mf`, `.obj`, and `.gltf` / `.glb` files.
-- **Intuitive Camera**: Orbit and zoom around models with smooth mouse controls.
+- **Intuitive Camera**: Orbit and zoom around models with smooth mouse and keyboard controls.
 - **Customizable Appearance**: Adjust background, mesh colors, lighting, and shadow settings.
 - **Reference Grid & Axes**: Configurable ground grid and coordinate axes to help with orientation.
 - **Remembers Settings**: Your visual preferences are automatically saved between sessions.
@@ -92,13 +92,15 @@ Choose your preferred format:
 
 Simply launch `Mesh` and **double-click** anywhere or **right-click** and select **"Load 3D Model"**.
 
-| Action                | Shortcut / Gesture                                 |
-| :-------------------- | :------------------------------------------------- |
-| **Orbit Camera**      | `Left Click` + Drag (with smooth momentum damping) |
-| **Zoom In / Out**     | `Mouse Wheel` (speed & direction customizable)     |
-| **Context Menu**      | `Right Click` anywhere                             |
-| **Open File Dialog**  | `Double Click (LMB)` or select in Context Menu     |
-| **Close Menu / Exit** | `Esc`                                              |
+| Action                      | Shortcut / Gesture                                         |
+| :-------------------------- | :--------------------------------------------------------- |
+| **Orbit Camera (Mouse)**    | `Left Click` + Drag (with smooth momentum damping)         |
+| **Orbit Vertical (Keys)**   | `↑` / `↓` (Arrow Up / Down)                                |
+| **Orbit Horizontal (Keys)** | `←` / `→` (Arrow Left / Right)                             |
+| **Zoom In / Out**           | `Mouse Wheel` or `+` / `-` keys (speed & dir customizable) |
+| **Context Menu**            | `Right Click` anywhere                                     |
+| **Open File Dialog**        | `Double Click (LMB)` or select in Context Menu             |
+| **Close Menu / Exit**       | `Esc`                                                      |
 
 ### From Command Line
 
