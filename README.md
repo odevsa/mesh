@@ -4,7 +4,7 @@
 
 ### **Mesh**
 
-**A lightning-fast, lightweight 3D mesh viewer built with Rust.**
+**A simple and lightweight 3D mesh viewer written in Rust.**
 
 [![Release](https://img.shields.io/github/v/release/odevsa/mesh?label=Release&style=flat-square&color=blue)](https://github.com/odevsa/mesh/releases)
 [![Rust](https://img.shields.io/badge/Rust-2024%20Edition-blue?style=flat-square&logo=rust)](https://www.rust-lang.org/)
@@ -27,17 +27,17 @@
 
 ## Overview
 
-**Mesh** is an open-source, bloat-free desktop viewer for 3D files. Engineered with performance in mind, it provides immediate startup, silky-smooth navigation, and an uncluttered interface to inspect your 3D models and prints without the overhead of heavy CAD or 3D modeling suites.
+**Mesh** is a simple desktop viewer designed to quickly inspect 3D files. It focuses on being lightweight and straightforward to use, making it easy to preview models and 3D prints without having to launch heavier software.
 
 ## Features
 
-- **Blazing Fast & Lightweight**: Written in pure Rust with a minimal memory footprint and near-instant startup.
-- **Multi-Format Support**: Native viewing for `.stl`, `.3mf`, `.obj`, and `.gltf` / `.glb` models.
-- **Effortless Navigation**: Orbit camera with smooth momentum damping, customizable zoom speed, and quick-reset view.
-- **Highly Customizable**: Real-time tweaks for background color, mesh shading, light angle, and shadow tones.
-- **Reference Grid**: Configurable ground grid (size, divisions, position) and directional XYZ axes.
-- **Persistent Preferences**: Visual configurations and control settings are automatically saved across sessions.
-- **Completely Portable**: Single-binary execution with zero external runtime dependencies required.
+- **Lightweight & Fast**: Built with Rust for quick startup and low memory usage.
+- **Multiple Formats**: Supports `.stl`, `.3mf`, `.obj`, and `.gltf` / `.glb` files.
+- **Intuitive Camera**: Orbit and zoom around models with smooth mouse controls.
+- **Customizable Appearance**: Adjust background, mesh colors, lighting, and shadow settings.
+- **Reference Grid & Axes**: Configurable ground grid and coordinate axes to help with orientation.
+- **Remembers Settings**: Your visual preferences are automatically saved between sessions.
+- **Portable**: Single standalone binary with no installation needed.
 
 ## Screenshots
 
