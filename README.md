@@ -6,11 +6,11 @@
 
 **A simple and lightweight 3D mesh viewer written in Rust.**
 
-[![Release](https://img.shields.io/github/v/release/odevsa/mesh?label=Release&style=flat-square&color=blue)](https://github.com/odevsa/mesh/releases)
+[![Release](https://img.shields.io/github/v/release/odevsa/mesh?label=Release&style=flat-square&color=blue&logo=github)](https://github.com/odevsa/mesh/releases/latest)
 [![Rust](https://img.shields.io/badge/Rust-2024%20Edition-blue?style=flat-square&logo=rust)](https://www.rust-lang.org/)
-![Build Linux](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-linux.yml?label=Linux&style=flat-square)
-[![Build Mac](https://img.shields.io/badge/Mac-Unavailable-lightgrey?style=flat-square)](#-download--installation)
-![Build Windows](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-windows.yml?label=Windows&style=flat-square)
+[![Build Linux](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-linux.yml?label=Linux&style=flat-square)](https://github.com/odevsa/mesh/releases/latest)
+[![Build Mac](https://img.shields.io/badge/Mac-unavailable-lightgrey?style=flat-square)](https://github.com/odevsa/mesh/releases/latest)
+[![Build Windows](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-windows.yml?label=Windows&style=flat-square)](https://github.com/odevsa/mesh/releases/latest)
 
 [Features](#features) •
 [Screenshots](#screenshots) •
