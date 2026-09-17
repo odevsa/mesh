@@ -9,7 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/odevsa/mesh?label=Release&style=flat-square&color=blue&logo=github)](https://github.com/odevsa/mesh/releases/latest)
 [![Rust](https://img.shields.io/badge/Rust-2024%20Edition-blue?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Build Linux](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-linux.yml?label=Linux&style=flat-square)](https://github.com/odevsa/mesh/releases/latest)
-[![Build Mac](https://img.shields.io/badge/Mac-unavailable-lightgrey?style=flat-square)](https://github.com/odevsa/mesh/releases/latest)
+[![Build Mac](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-macos.yml?label=Mac&style=flat-square)](https://github.com/odevsa/mesh/releases/latest)
 [![Build Windows](https://img.shields.io/github/actions/workflow/status/odevsa/mesh/release-windows.yml?label=Windows&style=flat-square)](https://github.com/odevsa/mesh/releases/latest)
 
 [Features](#features) •
@@ -80,7 +80,7 @@ Choose your preferred format:
 
 ### Mac
 
-- Comming soon
+- Download `mesh-*-macos.dmg` (Apple Silicon `arm64`, Intel `x86_64`, or `universal`), open it and drag `Mesh.app` to your Applications folder.
 
 ### Windows
 

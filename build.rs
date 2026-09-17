@@ -16,8 +16,13 @@ fn main() {
         }
 
         let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+        let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
         if target_env == "gnu" {
-            let candidates = ["x86_64-w64-mingw32-windres", "windres"];
+            let candidates: Vec<&str> = if target_arch == "aarch64" {
+                vec!["aarch64-w64-mingw32-windres", "windres"]
+            } else {
+                vec!["x86_64-w64-mingw32-windres", "windres"]
+            };
             let mut windres_path: Option<String> = None;
             for c in &candidates {
                 if Command::new("sh").arg("-c").arg(format!("command -v {}", c)).status().map(|s| s.success()).unwrap_or(false) {
@@ -28,7 +33,11 @@ fn main() {
 
             if let Some(w) = windres_path {
                 res.set_windres_path(&w);
-                let ar_candidates = ["x86_64-w64-mingw32-ar", "ar"];
+                let ar_candidates: Vec<&str> = if target_arch == "aarch64" {
+                    vec!["aarch64-w64-mingw32-ar", "ar"]
+                } else {
+                    vec!["x86_64-w64-mingw32-ar", "ar"]
+                };
                 for a in &ar_candidates {
                     if Command::new("sh").arg("-c").arg(format!("command -v {}", a)).status().map(|s| s.success()).unwrap_or(false) {
                         res.set_ar_path(a);
