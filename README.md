@@ -67,24 +67,24 @@ Download the latest version for your platform from the **[Releases](https://gith
 
 Choose your preferred format:
 
-- **AppImage** (universal, recommended):
+- **AppImage** (recommended):
   ```bash
-  chmod +x mesh-*-x86_64.AppImage
-  ./mesh-*-x86_64.AppImage
+  chmod +x mesh-*-linux-x86_64.AppImage
+  ./mesh-*-linux-x86_64.AppImage
   ```
 - **Debian / Ubuntu** (`.deb`):
   ```bash
-  sudo dpkg -i mesh_*_amd64.deb
+  sudo dpkg -i mesh-*-linux-x86_64.deb
   ```
 - **Tarball** (`.tar.xz`): Extract and run the `mesh` binary directly.
 
 ### Mac
 
-- Download `mesh-*-macos.dmg` (Apple Silicon `arm64`, Intel `x86_64`, or `universal`), open it and drag `Mesh.app` to your Applications folder.
+- Download `mesh-*-macos-arm64.dmg` (Apple Silicon) or `mesh-*-macos-x86_64.dmg` (Intel), open it and drag `Mesh.app` to your Applications folder.
 
 ### Windows
 
-- Download `mesh-*-x86_64-windows.exe` and double-click to run!
+- Download `mesh-*-windows-x86_64.exe` (or `mesh-*-windows-arm64.exe`) and double-click to run!
 
 ## Usage
 

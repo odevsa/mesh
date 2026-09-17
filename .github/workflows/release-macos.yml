@@ -16,8 +16,17 @@ env:
 
 jobs:
   build:
-    name: macOS (Universal, ARM64, x86_64)
+    name: macOS (${{ matrix.arch }})
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: arm64
+          - target: x86_64-apple-darwin
+            arch: x86_64
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,10 +34,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin, x86_64-apple-darwin
+          targets: ${{ matrix.target }}
 
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - name: Extract Version
         id: get_version
@@ -42,20 +53,16 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build macOS targets
+      - name: Define Package Names
+        id: names
         run: |
-          echo "Building Apple Silicon (ARM64)..."
-          cargo build --release --target aarch64-apple-darwin
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          ARCH="${{ matrix.arch }}"
+          APP_NAME="${{ env.APP_NAME }}"
+          echo "DMG_NAME=${APP_NAME}-${VERSION}-macos-${ARCH}.dmg" >> $GITHUB_OUTPUT
 
-          echo "Building Intel (x86_64)..."
-          cargo build --release --target x86_64-apple-darwin
-
-          echo "Creating Universal Binary..."
-          mkdir -p target/universal/release
-          lipo -create \
-            target/aarch64-apple-darwin/release/${APP_NAME} \
-            target/x86_64-apple-darwin/release/${APP_NAME} \
-            -output target/universal/release/${APP_NAME}
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Generate macOS Icon (.icns)
         run: |
@@ -72,65 +79,44 @@ jobs:
           iconutil -c icns mesh.iconset -o assets/mesh.icns
           rm -rf mesh.iconset
 
-      - name: Package macOS Bundles, DMGs and Archives
+      - name: Package macOS DMG
         run: |
           VERSION="${{ steps.get_version.outputs.VERSION }}"
           APP_NAME="${{ env.APP_NAME }}"
+          ARCH="${{ matrix.arch }}"
+          BINARY_PATH="target/${{ matrix.target }}/release/${APP_NAME}"
 
-          package_target() {
-            local ARCH_LABEL=$1
-            local BINARY_PATH=$2
+          APP_DIR="Mesh.app"
+          rm -rf "$APP_DIR"
+          mkdir -p "$APP_DIR/Contents/MacOS"
+          mkdir -p "$APP_DIR/Contents/Resources"
 
-            local APP_DIR="Mesh.app"
-            rm -rf "$APP_DIR"
-            mkdir -p "$APP_DIR/Contents/MacOS"
-            mkdir -p "$APP_DIR/Contents/Resources"
+          cp "$BINARY_PATH" "$APP_DIR/Contents/MacOS/${APP_NAME}"
+          chmod +x "$APP_DIR/Contents/MacOS/${APP_NAME}"
+          cp assets/mesh.icns "$APP_DIR/Contents/Resources/mesh.icns"
+          sed -e "s/__VERSION__/${VERSION}/g" assets/Info.plist > "$APP_DIR/Contents/Info.plist"
 
-            cp "$BINARY_PATH" "$APP_DIR/Contents/MacOS/${APP_NAME}"
-            chmod +x "$APP_DIR/Contents/MacOS/${APP_NAME}"
-            cp assets/mesh.icns "$APP_DIR/Contents/Resources/mesh.icns"
-            sed -e "s/__VERSION__/${VERSION}/g" assets/Info.plist > "$APP_DIR/Contents/Info.plist"
+          DMG_STAGE="dmg_stage_${ARCH}"
+          rm -rf "$DMG_STAGE"
+          mkdir -p "$DMG_STAGE"
+          cp -r "$APP_DIR" "$DMG_STAGE/Mesh.app"
+          ln -s /Applications "$DMG_STAGE/Applications"
 
-            # 1. Package .tar.gz
-            local TAR_NAME="${APP_NAME}-${VERSION}-${ARCH_LABEL}-macos.tar.gz"
-            tar -czf "$TAR_NAME" "$APP_DIR"
-
-            # 2. Package .dmg with Applications symlink
-            local DMG_STAGE="dmg_stage_${ARCH_LABEL}"
-            rm -rf "$DMG_STAGE"
-            mkdir -p "$DMG_STAGE"
-            cp -r "$APP_DIR" "$DMG_STAGE/Mesh.app"
-            ln -s /Applications "$DMG_STAGE/Applications"
-            
-            local DMG_NAME="${APP_NAME}-${VERSION}-${ARCH_LABEL}-macos.dmg"
-            hdiutil create -volname "Mesh" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_NAME"
-            
-            rm -rf "$DMG_STAGE" "$APP_DIR"
-          }
-
-          echo "Packaging ARM64..."
-          package_target "arm64" "target/aarch64-apple-darwin/release/${APP_NAME}"
-
-          echo "Packaging x86_64..."
-          package_target "x86_64" "target/x86_64-apple-darwin/release/${APP_NAME}"
-
-          echo "Packaging Universal..."
-          package_target "universal" "target/universal/release/${APP_NAME}"
+          hdiutil create -volname "Mesh" -srcfolder "$DMG_STAGE" -ov -format UDZO "${{ steps.names.outputs.DMG_NAME }}"
+          rm -rf "$DMG_STAGE" "$APP_DIR" assets/mesh.icns
 
       - name: Upload Artifacts (Local or CI)
         uses: actions/upload-artifact@v4
         with:
-          name: macos-packages
+          name: macos-${{ matrix.arch }}
           path: |
-            ${{ env.APP_NAME }}-*-macos.dmg
-            ${{ env.APP_NAME }}-*-macos.tar.gz
+            ${{ steps.names.outputs.DMG_NAME }}
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
         with:
           files: |
-            ${{ env.APP_NAME }}-*-macos.dmg
-            ${{ env.APP_NAME }}-*-macos.tar.gz
+            ${{ steps.names.outputs.DMG_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

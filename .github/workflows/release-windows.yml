@@ -16,16 +16,16 @@ env:
 
 jobs:
   build:
-    name: Windows (${{ matrix.arch_generic }})
+    name: Windows (${{ matrix.arch }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-pc-windows-msvc
-            arch_generic: x86_64
+            arch: x86_64
           - target: aarch64-pc-windows-msvc
-            arch_generic: aarch64
+            arch: arm64
 
     steps:
       - name: Checkout code
@@ -62,40 +62,23 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.get_version.outputs.VERSION }}"
-          ARCH="${{ matrix.arch_generic }}"
+          ARCH="${{ matrix.arch }}"
           APP_NAME="${{ env.APP_NAME }}"
-          echo "EXE_NAME=${APP_NAME}-${VERSION}-${ARCH}-windows.exe" >> $GITHUB_OUTPUT
-          echo "ZIP_NAME=${APP_NAME}-${VERSION}-${ARCH}-windows.zip" >> $GITHUB_OUTPUT
+          echo "EXE_NAME=${APP_NAME}-${VERSION}-windows-${ARCH}.exe" >> $GITHUB_OUTPUT
 
-      - name: Prepare Packages
+      - name: Prepare Executable
         shell: bash
         run: |
           APP_NAME="${{ env.APP_NAME }}"
-          VERSION="${{ steps.get_version.outputs.VERSION }}"
-          ARCH="${{ matrix.arch_generic }}"
           BIN_PATH="target/${{ matrix.target }}/release/${APP_NAME}.exe"
-
-          # Standalone executable with embedded icon
           cp "$BIN_PATH" "${{ steps.names.outputs.EXE_NAME }}"
-
-          # Zip package
-          STAGE_DIR="${APP_NAME}-${VERSION}-${ARCH}-windows"
-          rm -rf "$STAGE_DIR"
-          mkdir -p "$STAGE_DIR"
-          cp "$BIN_PATH" "$STAGE_DIR/${APP_NAME}.exe"
-          [ -f assets/mesh.ico ] && cp assets/mesh.ico "$STAGE_DIR/"
-          [ -f README.md ] && cp README.md "$STAGE_DIR/"
-
-          7z a "${{ steps.names.outputs.ZIP_NAME }}" "$STAGE_DIR"
-          rm -rf "$STAGE_DIR"
 
       - name: Upload Artifacts (Local or CI)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-${{ matrix.arch_generic }}
+          name: windows-${{ matrix.arch }}
           path: |
             ${{ steps.names.outputs.EXE_NAME }}
-            ${{ steps.names.outputs.ZIP_NAME }}
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -103,6 +86,5 @@ jobs:
         with:
           files: |
             ${{ steps.names.outputs.EXE_NAME }}
-            ${{ steps.names.outputs.ZIP_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

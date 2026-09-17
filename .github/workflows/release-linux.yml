@@ -16,7 +16,7 @@ env:
 
 jobs:
   build:
-    name: Linux (${{ matrix.arch_generic }})
+    name: Linux (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -24,13 +24,11 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            arch_generic: x86_64
-            arch_deb: amd64
+            arch: x86_64
             arch_appimage: x86_64
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            arch_generic: aarch64
-            arch_deb: arm64
+            arch: arm64
             arch_appimage: aarch64
 
     steps:
@@ -75,19 +73,17 @@ jobs:
         id: names
         run: |
           VERSION="${{ steps.get_version.outputs.VERSION }}"
-          ARCH="${{ matrix.arch_generic }}"
-          ARCH_DEB="${{ matrix.arch_deb }}"
+          ARCH="${{ matrix.arch }}"
           APP_NAME="${{ env.APP_NAME }}"
-          echo "TAR_NAME=${APP_NAME}-${VERSION}-${ARCH}-linux.tar.xz" >> $GITHUB_OUTPUT
-          echo "DEB_NAME=${APP_NAME}_${VERSION}_${ARCH_DEB}.deb" >> $GITHUB_OUTPUT
-          echo "APPIMAGE_NAME=${APP_NAME}-${VERSION}-${ARCH}.AppImage" >> $GITHUB_OUTPUT
+          echo "TAR_NAME=${APP_NAME}-${VERSION}-linux-${ARCH}.tar.xz" >> $GITHUB_OUTPUT
+          echo "DEB_NAME=${APP_NAME}-${VERSION}-linux-${ARCH}.deb" >> $GITHUB_OUTPUT
+          echo "APPIMAGE_NAME=${APP_NAME}-${VERSION}-linux-${ARCH}.AppImage" >> $GITHUB_OUTPUT
 
       - name: Package .tar.xz
         run: |
-          VERSION="${{ steps.get_version.outputs.VERSION }}"
-          ARCH="${{ matrix.arch_generic }}"
+          ARCH="${{ matrix.arch }}"
           APP_NAME="${{ env.APP_NAME }}"
-          STAGE_DIR="${APP_NAME}-${VERSION}-${ARCH}-linux"
+          STAGE_DIR="stage_linux_${ARCH}"
           rm -rf "$STAGE_DIR"
           mkdir -p "$STAGE_DIR/icons"
 
@@ -96,9 +92,8 @@ jobs:
           cp "assets/${APP_NAME}.desktop" "$STAGE_DIR/"
           cp "assets/icons/512x512/apps/${APP_NAME}.png" "$STAGE_DIR/"
           cp -r assets/icons/* "$STAGE_DIR/icons/"
-          [ -f README.md ] && cp README.md "$STAGE_DIR/"
 
-          tar -cJf "${{ steps.names.outputs.TAR_NAME }}" "$STAGE_DIR"
+          tar -cJf "${{ steps.names.outputs.TAR_NAME }}" -C "$STAGE_DIR" .
           rm -rf "$STAGE_DIR"
 
       - name: Package .deb
@@ -139,7 +134,7 @@ jobs:
       - name: Upload Artifacts (Local or CI)
         uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.arch_generic }}
+          name: linux-${{ matrix.arch }}
           path: |
             ${{ steps.names.outputs.TAR_NAME }}
             ${{ steps.names.outputs.DEB_NAME }}
