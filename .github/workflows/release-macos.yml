@@ -96,6 +96,9 @@ jobs:
           cp assets/mesh.icns "$APP_DIR/Contents/Resources/mesh.icns"
           sed -e "s/__VERSION__/${VERSION}/g" assets/Info.plist > "$APP_DIR/Contents/Info.plist"
 
+          # Ad-hoc sign the app bundle for macOS ARM64 / Apple Silicon compatibility
+          codesign --force --deep --sign - "$APP_DIR"
+
           DMG_STAGE="dmg_stage_${ARCH}"
           rm -rf "$DMG_STAGE"
           mkdir -p "$DMG_STAGE"
