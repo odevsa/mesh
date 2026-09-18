@@ -169,10 +169,17 @@ impl App {
             let ui_resp = self.render_ui();
             self.apply_ui_response(ui_resp);
 
+            if self.camera.should_close {
+                break;
+            }
+
             self.process_incoming_meshes();
         }
+        if let Err(e) = self.cfg.save() {
+            eprintln!("Failed to save config: {}", e);
+        }
+        self.window.hide();
         drop(self);
-        std::process::exit(0);
     }
 
     fn update_window_title(&mut self) {
@@ -202,7 +209,12 @@ impl App {
     }
 
     fn trigger_file_dialog(&mut self) {
-        if dialog::trigger_file_dialog(self.registry.clone(), self.tx.clone()) {
+        self.camera.dialog_open = true;
+        let picked = dialog::trigger_file_dialog(self.registry.clone(), self.tx.clone());
+        self.camera.dialog_open = false;
+        self.camera.last_dialog_close = Some(std::time::Instant::now());
+
+        if picked {
             if let Some(obj) = self.camera.object_mut() {
                 obj.set_local_scale(0.0, 0.0, 0.0);
             }
