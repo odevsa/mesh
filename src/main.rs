@@ -16,6 +16,17 @@ use std::sync::mpsc::channel;
 use std::sync::Arc;
 
 fn main() {
+    if std::env::var_os("WGPU_BACKEND").is_none() {
+        unsafe {
+            #[cfg(target_os = "windows")]
+            std::env::set_var("WGPU_BACKEND", "dx12");
+            #[cfg(target_os = "linux")]
+            std::env::set_var("WGPU_BACKEND", "vulkan");
+            #[cfg(target_os = "macos")]
+            std::env::set_var("WGPU_BACKEND", "metal");
+        }
+    }
+
     let arg_path: Option<PathBuf> = std::env::args().nth(1).map(PathBuf::from);
     let initial_loading = arg_path.is_some();
 
@@ -40,6 +51,6 @@ fn main() {
         dialog::load_file_async(&path, registry.clone(), tx.clone());
     }
 
-    let mut app = App::new(rx, tx, registry, cfg, initial_loading);
+    let app = App::new(rx, tx, registry, cfg, initial_loading);
     app.run();
 }

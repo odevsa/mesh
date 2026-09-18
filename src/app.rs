@@ -38,10 +38,15 @@ impl App {
         cfg: Config,
         initial_loading: bool,
     ) -> Self {
+        let setup = kiss3d::window::CanvasSetup {
+            vsync: true,
+            samples: kiss3d::window::NumSamples::One,
+            ..Default::default()
+        };
         let mut window = if initial_loading {
-            pollster::block_on(Window::new("Mesh - Loading..."))
+            pollster::block_on(Window::new_with_setup("Mesh - Loading...", 800, 600, setup.clone()))
         } else {
-            pollster::block_on(Window::new("Mesh"))
+            pollster::block_on(Window::new_with_setup("Mesh", 800, 600, setup))
         };
 
         window.set_background_color(Color::new(
@@ -151,7 +156,7 @@ impl App {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(mut self) {
         while pollster::block_on(self.window.render_3d(&mut self.scene_root, &mut self.camera)) {
             if self.camera.should_close {
                 break;
@@ -166,6 +171,8 @@ impl App {
 
             self.process_incoming_meshes();
         }
+        drop(self);
+        std::process::exit(0);
     }
 
     fn update_window_title(&mut self) {
