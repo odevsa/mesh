@@ -1,4 +1,5 @@
 use crate::config::{Config, ModelPosition};
+use crate::i18n::{Language, TextKey};
 use egui::{Context, Pos2};
 
 #[derive(Default)]
@@ -49,6 +50,7 @@ pub fn render_context_menu(
     let menu_width = if is_wide { 230.0 } else { 170.0 };
 
     let mut resp = UiResponse::default();
+    let lang = cfg.language;
 
     let area_resp = egui::Area::new(egui::Id::new("context_menu"))
         .order(egui::Order::Foreground)
@@ -66,34 +68,34 @@ pub fn render_context_menu(
                         ui.visuals_mut().widgets.hovered.bg_stroke = egui::Stroke::NONE;
                         ui.visuals_mut().widgets.active.bg_stroke = egui::Stroke::NONE;
 
-                        if menu_button(ui, "Load 3D Model").clicked() {
+                        if menu_button(ui, lang.t(TextKey::Load3dModel)).clicked() {
                             resp.open_file_dialog = true;
                             resp.close_menu_requested = true;
                         }
 
-                        if menu_button_enabled(ui, has_model, "Unload 3D Model").clicked() {
+                        if menu_button_enabled(ui, has_model, lang.t(TextKey::Unload3dModel)).clicked() {
                             resp.unload_model_requested = true;
                             resp.close_menu_requested = true;
                         }
 
                         ui.separator();
 
-                        let r_grid = ui.collapsing("Grid", |ui| {
-                            if ui.checkbox(&mut cfg.show_grid, "Show Grid").changed() {
+                        let r_grid = ui.collapsing(lang.t(TextKey::Grid), |ui| {
+                            if ui.checkbox(&mut cfg.show_grid, lang.t(TextKey::ShowGrid)).changed() {
                                 resp.config_changed = true;
                                 resp.grid_rebuild = true;
                             }
                             if cfg.show_grid {
-                                if ui.add(egui::Slider::new(&mut cfg.grid_size, 0.5..=20.0).text("Size")).changed() {
+                                if ui.add(egui::Slider::new(&mut cfg.grid_size, 0.5..=20.0).text(lang.t(TextKey::Size))).changed() {
                                     resp.config_changed = true;
                                     resp.grid_rebuild = true;
                                 }
-                                if ui.add(egui::Slider::new(&mut cfg.grid_divisions, 2..=50).text("Divisions")).changed() {
+                                if ui.add(egui::Slider::new(&mut cfg.grid_divisions, 2..=50).text(lang.t(TextKey::Divisions))).changed() {
                                     resp.config_changed = true;
                                     resp.grid_rebuild = true;
                                 }
                                 ui.horizontal(|ui| {
-                                    ui.label("Grid Color:");
+                                    ui.label(lang.t(TextKey::GridColor));
                                     if ui.color_edit_button_srgb(&mut cfg.grid_color).changed() {
                                         resp.config_changed = true;
                                         resp.grid_rebuild = true;
@@ -102,23 +104,23 @@ pub fn render_context_menu(
                             }
 
                             ui.horizontal(|ui| {
-                                ui.label("Model Position:");
+                                ui.label(lang.t(TextKey::ModelPosition));
                                 egui::ComboBox::from_id_salt("model_position")
                                     .selected_text(match cfg.model_position {
-                                        ModelPosition::Above => "Above",
-                                        ModelPosition::Center => "Center",
-                                        ModelPosition::Below => "Below",
+                                        ModelPosition::Above => lang.t(TextKey::Above),
+                                        ModelPosition::Center => lang.t(TextKey::Center),
+                                        ModelPosition::Below => lang.t(TextKey::Below),
                                     })
                                     .show_ui(ui, |ui| {
-                                        if ui.selectable_value(&mut cfg.model_position, ModelPosition::Above, "Above").changed() {
+                                        if ui.selectable_value(&mut cfg.model_position, ModelPosition::Above, lang.t(TextKey::Above)).changed() {
                                             resp.config_changed = true;
                                             resp.position_changed = true;
                                         }
-                                        if ui.selectable_value(&mut cfg.model_position, ModelPosition::Center, "Center").changed() {
+                                        if ui.selectable_value(&mut cfg.model_position, ModelPosition::Center, lang.t(TextKey::Center)).changed() {
                                             resp.config_changed = true;
                                             resp.position_changed = true;
                                         }
-                                        if ui.selectable_value(&mut cfg.model_position, ModelPosition::Below, "Below").changed() {
+                                        if ui.selectable_value(&mut cfg.model_position, ModelPosition::Below, lang.t(TextKey::Below)).changed() {
                                             resp.config_changed = true;
                                             resp.position_changed = true;
                                         }
@@ -126,8 +128,8 @@ pub fn render_context_menu(
                             });
                         });
 
-                        let r_axes = ui.collapsing("Coordinate Axes", |ui| {
-                            ui.label("Axes Visibility:");
+                        let r_axes = ui.collapsing(lang.t(TextKey::CoordinateAxes), |ui| {
+                            ui.label(lang.t(TextKey::AxesVisibility));
                             ui.horizontal(|ui| {
                                 if ui.checkbox(&mut cfg.show_axes[0], "X").changed() {
                                     resp.config_changed = true;
@@ -142,22 +144,22 @@ pub fn render_context_menu(
                                     resp.axes_rebuild = true;
                                 }
                             });
-                            if ui.checkbox(&mut cfg.show_axis_direction, "Axis Direction Arrows").changed() {
+                            if ui.checkbox(&mut cfg.show_axis_direction, lang.t(TextKey::AxisDirectionArrows)).changed() {
                                 resp.config_changed = true;
                                 resp.axes_rebuild = true;
                             }
                         });
 
-                        let r_colors = ui.collapsing("Colors", |ui| {
+                        let r_colors = ui.collapsing(lang.t(TextKey::Colors), |ui| {
                             ui.horizontal(|ui| {
-                                ui.label("Background:");
+                                ui.label(lang.t(TextKey::Background));
                                 if ui.color_edit_button_srgb(&mut cfg.background).changed() {
                                     resp.config_changed = true;
                                     resp.bg_changed = true;
                                 }
                             });
                             ui.horizontal(|ui| {
-                                ui.label("Object:");
+                                ui.label(lang.t(TextKey::Object));
                                 if ui.color_edit_button_srgb(&mut cfg.object_color).changed() {
                                     resp.config_changed = true;
                                     resp.obj_color_changed = true;
@@ -165,27 +167,39 @@ pub fn render_context_menu(
                             });
                         });
 
-                        let r_controls = ui.collapsing("Controls & Scale", |ui| {
-                            if ui.checkbox(&mut cfg.show_dummy_box, "Show Dummy Box").changed() {
+                        let r_controls = ui.collapsing(lang.t(TextKey::ControlsAndScale), |ui| {
+                            if ui.checkbox(&mut cfg.show_dummy_box, lang.t(TextKey::ShowDummyBox)).changed() {
                                 resp.config_changed = true;
                                 resp.dummy_box_changed = true;
                             }
-                            if ui.add(egui::Slider::new(&mut cfg.object_scale, 0.1..=10.0).text("Scale")).changed() {
+                            if ui.add(egui::Slider::new(&mut cfg.object_scale, 0.1..=10.0).text(lang.t(TextKey::Scale))).changed() {
                                 resp.config_changed = true;
                                 resp.scale_changed = true;
                             }
-                            if ui.checkbox(&mut cfg.smooth_orbit, "Smooth Orbit").changed() {
+                            if ui.checkbox(&mut cfg.smooth_orbit, lang.t(TextKey::SmoothOrbit)).changed() {
                                 resp.config_changed = true;
                                 resp.controls_changed = true;
                             }
-                            if ui.checkbox(&mut cfg.invert_scroll, "Invert Zoom").changed() {
+                            if ui.checkbox(&mut cfg.invert_scroll, lang.t(TextKey::InvertZoom)).changed() {
                                 resp.config_changed = true;
                                 resp.controls_changed = true;
                             }
-                            if ui.add(egui::Slider::new(&mut cfg.scroll_speed, 0.001..=0.05).text("Zoom Speed")).changed() {
+                            if ui.add(egui::Slider::new(&mut cfg.scroll_speed, 0.001..=0.05).text(lang.t(TextKey::ZoomSpeed))).changed() {
                                 resp.config_changed = true;
                                 resp.controls_changed = true;
                             }
+                            ui.horizontal(|ui| {
+                                ui.label(lang.t(TextKey::Language));
+                                egui::ComboBox::from_id_salt("app_language")
+                                    .selected_text(cfg.language.display_name(lang))
+                                    .show_ui(ui, |ui| {
+                                        for &l in Language::ALL {
+                                            if ui.selectable_value(&mut cfg.language, l, l.display_name(lang)).changed() {
+                                                resp.config_changed = true;
+                                            }
+                                        }
+                                    });
+                            });
                         });
 
                         let should_be_wide = r_grid.body_response.is_some()
@@ -200,23 +214,23 @@ pub fn render_context_menu(
 
                         ui.separator();
 
-                        if menu_button(ui, "Reset Camera").clicked() {
+                        if menu_button(ui, lang.t(TextKey::ResetCamera)).clicked() {
                             resp.reset_camera_requested = true;
                             resp.close_menu_requested = true;
                         }
 
-                        if menu_button(ui, "Reset Defaults").clicked() {
+                        if menu_button(ui, lang.t(TextKey::ResetDefaults)).clicked() {
                             resp.reset_defaults_requested = true;
                         }
 
                         ui.separator();
 
-                        if menu_button(ui, "About").clicked() {
+                        if menu_button(ui, lang.t(TextKey::About)).clicked() {
                             resp.open_about_requested = true;
                             resp.close_menu_requested = true;
                         }
 
-                        if menu_button(ui, "Exit").clicked() {
+                        if menu_button(ui, lang.t(TextKey::Exit)).clicked() {
                             resp.close_app_requested = true;
                         }
                     });

@@ -29,6 +29,7 @@ pub struct App {
     menu_pos: egui::Pos2,
     has_model: bool,
     show_about: bool,
+    fonts_initialized: bool,
 }
 
 impl App {
@@ -155,6 +156,7 @@ impl App {
             menu_pos: egui::pos2(120.0, 120.0),
             has_model: false,
             show_about: false,
+            fonts_initialized: false,
         }
     }
 
@@ -187,10 +189,11 @@ impl App {
     fn update_window_title(&mut self) {
         let now_loading = self.camera.is_loading();
         if now_loading != self.last_was_loading {
+            let lang = self.cfg.language;
             if now_loading {
-                self.window.set_title("Mesh - Loading...");
+                self.window.set_title(lang.t(crate::i18n::TextKey::WindowLoadingTitle));
             } else {
-                self.window.set_title("Mesh");
+                self.window.set_title(lang.t(crate::i18n::TextKey::WindowTitle));
             }
             self.last_was_loading = now_loading;
         }
@@ -231,11 +234,19 @@ impl App {
         let cfg = &mut self.cfg;
         let is_loading = self.camera.is_loading();
         let has_model = self.has_model;
+        let lang = cfg.language;
+
+        self.show_about = self.camera.about_open;
 
         self.window.draw_ui(|ctx| {
+            if !self.fonts_initialized {
+                crate::i18n::setup_cjk_fonts(ctx);
+                self.fonts_initialized = true;
+            }
+
             if is_loading {
-                overlay::render_loading_overlay(ctx);
-            } else if !has_model && overlay::render_empty_overlay(ctx) {
+                overlay::render_loading_overlay(ctx, lang);
+            } else if !has_model && overlay::render_empty_overlay(ctx, lang) {
                 ui_resp.open_file_dialog = true;
                 ui_resp.close_menu_requested = true;
             }
@@ -251,8 +262,10 @@ impl App {
                 ui_resp.open_about_requested = open_about;
             }
 
-            overlay::render_about_dialog(ctx, &mut self.show_about);
+            overlay::render_about_dialog(ctx, &mut self.show_about, cfg.language);
         });
+
+        self.camera.about_open = self.show_about;
 
         if ui_resp.close_menu_requested {
             self.camera.menu_open = false;
@@ -284,6 +297,7 @@ impl App {
 
         if resp.open_about_requested {
             self.show_about = true;
+            self.camera.about_open = true;
         }
 
         if resp.config_changed {

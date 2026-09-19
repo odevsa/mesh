@@ -23,6 +23,7 @@ pub struct FixedCenterCamera {
     pub open_file_requested: bool,
     pub dialog_open: bool,
     pub last_dialog_close: Option<std::time::Instant>,
+    pub about_open: bool,
 }
 
 impl FixedCenterCamera {
@@ -52,6 +53,7 @@ impl FixedCenterCamera {
             open_file_requested: false,
             dialog_open: false,
             last_dialog_close: None,
+            about_open: false,
         }
     }
 
@@ -232,7 +234,9 @@ impl Camera3d for FixedCenterCamera {
                 if *act == Action::Press {
                     match k {
                         Key::Escape => {
-                            if self.menu_open {
+                            if self.about_open {
+                                self.about_open = false;
+                            } else if self.menu_open {
                                 self.menu_open = false;
                             } else if self.dialog_open {
                             } else if let Some(last_close) = self.last_dialog_close {

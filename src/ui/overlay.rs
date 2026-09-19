@@ -1,6 +1,7 @@
+use crate::i18n::{Language, TextKey};
 use egui::{Align2, Context, Margin, Vec2};
 
-pub fn render_loading_overlay(ctx: &Context) {
+pub fn render_loading_overlay(ctx: &Context, lang: Language) {
     egui::Area::new(egui::Id::new("loading_overlay"))
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .order(egui::Order::Foreground)
@@ -13,13 +14,13 @@ pub fn render_loading_overlay(ctx: &Context) {
                     ui.vertical_centered(|ui| {
                         ui.spinner();
                         ui.add_space(8.0);
-                        ui.label("Loading model...");
+                        ui.label(lang.t(TextKey::LoadingModel));
                     });
                 });
         });
 }
 
-pub fn render_empty_overlay(ctx: &Context) -> bool {
+pub fn render_empty_overlay(ctx: &Context, lang: Language) -> bool {
     let mut open_dialog = false;
     egui::Area::new(egui::Id::new("empty_overlay"))
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
@@ -31,7 +32,7 @@ pub fn render_empty_overlay(ctx: &Context) -> bool {
                 .show(ui, |ui| {
                     ui.set_min_width(200.0);
                     ui.vertical_centered(|ui| {
-                        if ui.button("Load 3D Model").clicked() {
+                        if ui.button(lang.t(TextKey::Load3dModel)).clicked() {
                             open_dialog = true;
                         }
                     });
@@ -55,7 +56,7 @@ pub fn open_url(url: &str) {
     }
 }
 
-pub fn render_about_dialog(ctx: &Context, show_about: &mut bool) {
+pub fn render_about_dialog(ctx: &Context, show_about: &mut bool, lang: Language) {
     if !*show_about {
         return;
     }
@@ -65,7 +66,6 @@ pub fn render_about_dialog(ctx: &Context, show_about: &mut bool) {
         return;
     }
 
-    let mut close_clicked = false;
     let icon_bytes = include_bytes!("../../assets/icons/128x128/apps/mesh.png");
     let icon_image = image::load_from_memory(icon_bytes).ok().map(|img| {
         let rgba = img.to_rgba8();
@@ -73,7 +73,7 @@ pub fn render_about_dialog(ctx: &Context, show_about: &mut bool) {
         egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_flat_samples().as_slice())
     });
 
-    egui::Window::new("About")
+    egui::Window::new(lang.t(TextKey::About))
         .open(show_about)
         .order(egui::Order::Tooltip)
         .collapsible(false)
@@ -97,7 +97,7 @@ pub fn render_about_dialog(ctx: &Context, show_about: &mut bool) {
                         .weak(),
                 );
                 ui.add_space(8.0);
-                ui.label("A simple and lightweight 3D mesh viewer written in Rust.");
+                ui.label(lang.t(TextKey::AboutDescription));
                 ui.add_space(6.0);
                 let link_resp = ui.hyperlink_to("github.com/odevsa/mesh", "https://github.com/odevsa/mesh");
                 if link_resp.clicked() {
@@ -107,26 +107,14 @@ pub fn render_about_dialog(ctx: &Context, show_about: &mut bool) {
                 ui.separator();
                 ui.add_space(8.0);
 
-                ui.label(egui::RichText::new("Supported Formats").strong());
+                ui.label(egui::RichText::new(lang.t(TextKey::SupportedFormats)).strong());
                 ui.add_space(4.0);
                 ui.label("• STL (.stl)");
                 ui.label("• 3MF (.3mf)");
                 ui.label("• Wavefront OBJ (.obj)");
                 ui.label("• glTF / GLB (.gltf, .glb)");
-
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(8.0);
-
-                if ui.button("  Close  ").clicked() {
-                    close_clicked = true;
-                }
-                ui.add_space(4.0);
+                ui.add_space(6.0);
             });
         });
-
-    if close_clicked {
-        *show_about = false;
-    }
 }
 

@@ -4,6 +4,7 @@ mod app;
 mod camera;
 mod config;
 mod dialog;
+mod i18n;
 mod loader;
 mod scene;
 mod ui;
