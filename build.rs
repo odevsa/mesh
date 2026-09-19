@@ -8,6 +8,12 @@ fn main() {
         let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
         let icon_path = manifest_dir.join("assets").join("mesh.ico");
         
+        res.set("ProductName", "Mesh 3D Viewer");
+        res.set("FileDescription", "Fast 3D Mesh & G-code Viewer");
+        res.set("CompanyName", "odevsa");
+        res.set("LegalCopyright", "Copyright (c) 2026 odevsa");
+        res.set("OriginalFilename", "mesh.exe");
+
         if icon_path.exists() {
             res.set_icon(icon_path.to_str().unwrap());
         } else {

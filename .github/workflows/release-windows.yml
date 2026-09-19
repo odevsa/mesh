@@ -65,6 +65,7 @@ jobs:
           ARCH="${{ matrix.arch }}"
           APP_NAME="${{ env.APP_NAME }}"
           echo "EXE_NAME=${APP_NAME}-${VERSION}-windows-${ARCH}.exe" >> $GITHUB_OUTPUT
+          echo "SETUP_NAME=${APP_NAME}-${VERSION}-windows-${ARCH}-setup.exe" >> $GITHUB_OUTPUT
 
       - name: Prepare Executable
         shell: bash
@@ -73,12 +74,18 @@ jobs:
           BIN_PATH="target/${{ matrix.target }}/release/${APP_NAME}.exe"
           cp "$BIN_PATH" "${{ steps.names.outputs.EXE_NAME }}"
 
+      - name: Build Inno Setup Installer
+        shell: cmd
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.get_version.outputs.VERSION }} /DTargetArch=${{ matrix.arch }} /DTargetTriplet=${{ matrix.target }} installer.iss
+
       - name: Upload Artifacts (Local or CI)
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}
           path: |
             ${{ steps.names.outputs.EXE_NAME }}
+            ${{ steps.names.outputs.SETUP_NAME }}
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -86,5 +93,6 @@ jobs:
         with:
           files: |
             ${{ steps.names.outputs.EXE_NAME }}
+            ${{ steps.names.outputs.SETUP_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
