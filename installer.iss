@@ -51,6 +51,7 @@ Name: "fileassoc_3mf"; Description: "Associate 3MF 3D models (.3mf)"; GroupDescr
 Name: "fileassoc_obj"; Description: "Associate Wavefront OBJ files (.obj)"; GroupDescription: "File Associations:"
 Name: "fileassoc_gltf"; Description: "Associate glTF 3D models (.gltf)"; GroupDescription: "File Associations:"
 Name: "fileassoc_glb"; Description: "Associate GLB 3D models (.glb)"; GroupDescription: "File Associations:"
+Name: "fileassoc_fbx"; Description: "Associate Autodesk FBX models (.fbx)"; GroupDescription: "File Associations:"
 
 [Files]
 Source: "target\{#TargetTriplet}\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -89,3 +90,9 @@ Root: HKA; Subkey: "Software\Classes\.glb"; ValueType: string; ValueValue: "Mesh
 Root: HKA; Subkey: "Software\Classes\Mesh.glb"; ValueType: string; ValueValue: "Binary glTF 3D Model"; Flags: uninsdeletekey; Tasks: fileassoc_glb
 Root: HKA; Subkey: "Software\Classes\Mesh.glb\DefaultIcon"; ValueType: string; ValueValue: "{app}\{#MyAppExeName},0"; Tasks: fileassoc_glb
 Root: HKA; Subkey: "Software\Classes\Mesh.glb\shell\open\command"; ValueType: string; ValueValue: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: fileassoc_glb
+
+; .fbx
+Root: HKA; Subkey: "Software\Classes\.fbx"; ValueType: string; ValueValue: "Mesh.fbx"; Flags: uninsdeletevalue; Tasks: fileassoc_fbx
+Root: HKA; Subkey: "Software\Classes\Mesh.fbx"; ValueType: string; ValueValue: "Autodesk FBX Model"; Flags: uninsdeletekey; Tasks: fileassoc_fbx
+Root: HKA; Subkey: "Software\Classes\Mesh.fbx\DefaultIcon"; ValueType: string; ValueValue: "{app}\{#MyAppExeName},0"; Tasks: fileassoc_fbx
+Root: HKA; Subkey: "Software\Classes\Mesh.fbx\shell\open\command"; ValueType: string; ValueValue: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: fileassoc_fbx

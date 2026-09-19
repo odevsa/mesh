@@ -113,6 +113,7 @@ pub fn render_about_dialog(ctx: &Context, show_about: &mut bool, lang: Language)
                 ui.label("• 3MF (.3mf)");
                 ui.label("• Wavefront OBJ (.obj)");
                 ui.label("• glTF / GLB (.gltf, .glb)");
+                ui.label("• Autodesk FBX (.fbx)");
                 ui.add_space(6.0);
             });
         });

@@ -42,6 +42,7 @@
                 <string>obj</string>
                 <string>gltf</string>
                 <string>glb</string>
+                <string>fbx</string>
             </array>
         </dict>
     </array>

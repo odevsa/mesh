@@ -44,6 +44,7 @@ fn main() {
     registry.register(Box::new(loader::threemf::ThreemfLoader {}));
     registry.register(Box::new(loader::obj::ObjLoader {}));
     registry.register(Box::new(loader::gltf::GltfLoader {}));
+    registry.register(Box::new(loader::fbx::FbxLoader {}));
     let registry = Arc::new(registry);
 
     let (tx, rx) = channel();

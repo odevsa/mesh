@@ -32,8 +32,8 @@ pub fn trigger_file_dialog(
 ) -> bool {
     if let Some(path) = FileDialog::new()
         .add_filter(
-            "3D Models (*.stl, *.3mf, *.obj, *.gltf, *.glb)",
-            &["stl", "3mf", "obj", "gltf", "glb"],
+            "3D Models (*.stl, *.3mf, *.obj, *.gltf, *.glb, *.fbx)",
+            &["stl", "3mf", "obj", "gltf", "glb", "fbx"],
         )
         .pick_file()
     {

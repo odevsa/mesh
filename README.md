@@ -32,7 +32,7 @@
 ## Features
 
 - **Lightweight & Fast**: Built with Rust for quick startup and low memory usage.
-- **Multiple Formats**: Supports `.stl`, `.3mf`, `.obj`, and `.gltf` / `.glb` files.
+- **Multiple Formats**: Supports `.stl`, `.3mf`, `.obj`, `.gltf` / `.glb`, and `.fbx` files.
 - **Intuitive Camera**: Orbit and zoom around models with smooth mouse and keyboard controls.
 - **Customizable Appearance**: Adjust background, mesh colors, lighting, and shadow settings.
 - **Reference Grid & Axes**: Configurable ground grid and coordinate axes to help with orientation.
@@ -56,6 +56,7 @@
 | **3MF**           |     `.3mf`      | 3D Manufacturing Format used in modern 3D printing   |
 | **Wavefront OBJ** |     `.obj`      | Classic 3D geometry format                           |
 | **glTF / GLB**    | `.gltf`, `.glb` | GL Transmission Format (standard and binary)         |
+| **Autodesk FBX**  |     `.fbx`      | Filmbox 3D asset exchange format (Binary and ASCII)  |
 
 ## Installation
 

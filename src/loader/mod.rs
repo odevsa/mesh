@@ -5,6 +5,7 @@ pub mod stl;
 pub mod threemf;
 pub mod obj;
 pub mod gltf;
+pub mod fbx;
 
 pub struct MeshData {
     pub positions: Vec<[f32; 3]>,

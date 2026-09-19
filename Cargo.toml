@@ -19,6 +19,7 @@ quick-xml = "0.29"
 zip = "0.6"
 image = "0.25"
 sys-locale = "0.3"
+ufbx = "0.7"
 
 [features]
 default = []

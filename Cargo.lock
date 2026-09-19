@@ -2349,6 +2349,7 @@ dependencies = [
  "stl_io",
  "sys-locale",
  "tobj",
+ "ufbx",
  "winres",
  "zip",
 ]
@@ -4343,6 +4344,15 @@ dependencies = [
  "memoffset",
  "tempfile",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "ufbx"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7cbffe8e1719b4340b3780d1c931987aa39b2f1bb85247d324e114a429eb9e3"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
