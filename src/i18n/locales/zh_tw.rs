@@ -21,6 +21,8 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::Object => "物體：",
         TextKey::ControlsAndScale => "控制與縮放",
         TextKey::ShowDummyBox => "顯示占位立方體",
+        TextKey::ShowDimensions => "顯示尺寸",
+        TextKey::Dimensions => "尺寸",
         TextKey::Scale => "縮放",
         TextKey::SmoothOrbit => "平滑軌道",
         TextKey::InvertZoom => "反轉縮放",

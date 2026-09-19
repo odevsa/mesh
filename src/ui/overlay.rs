@@ -118,3 +118,32 @@ pub fn render_about_dialog(ctx: &Context, show_about: &mut bool, lang: Language)
         });
 }
 
+pub fn render_dimensions_overlay(ctx: &Context, lang: Language, size: kiss3d::glamx::Vec3) {
+    egui::Area::new(egui::Id::new("dimensions_overlay"))
+        .anchor(Align2::RIGHT_BOTTOM, Vec2::new(-15.0, -15.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            ui.style_mut().interaction.selectable_labels = false;
+            fn format_dim(val: f32) -> String {
+                let rounded = (val * 100.0).round() / 100.0;
+                if (rounded - rounded.round()).abs() < 1e-4 {
+                    format!("{:.0}", rounded)
+                } else if (rounded * 10.0 - (rounded * 10.0).round()).abs() < 1e-4 {
+                    format!("{:.1}", rounded)
+                } else {
+                    format!("{:.2}", rounded)
+                }
+            }
+            let text = format!(
+                "X: {}   Y: {}   Z: {}",
+                format_dim(size.x),
+                format_dim(size.y),
+                format_dim(size.z)
+            );
+
+            ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
+                ui.label(egui::RichText::new(lang.t(TextKey::Dimensions)).strong().size(12.0));
+                ui.label(egui::RichText::new(text).size(12.0));
+            });
+        });
+}

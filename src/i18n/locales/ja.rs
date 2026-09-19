@@ -21,6 +21,8 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::Object => "オブジェクト色:",
         TextKey::ControlsAndScale => "操作とスケール",
         TextKey::ShowDummyBox => "ダミーボックスを表示",
+        TextKey::ShowDimensions => "寸法を表示",
+        TextKey::Dimensions => "寸法",
         TextKey::Scale => "スケール",
         TextKey::SmoothOrbit => "スムーズな回転",
         TextKey::InvertZoom => "ズーム反転",

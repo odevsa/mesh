@@ -21,6 +21,8 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::Object => "개체:",
         TextKey::ControlsAndScale => "제어 및 배율",
         TextKey::ShowDummyBox => "더미 상자 표시",
+        TextKey::ShowDimensions => "치수 표시",
+        TextKey::Dimensions => "치수",
         TextKey::Scale => "배율",
         TextKey::SmoothOrbit => "부드러운 회전",
         TextKey::InvertZoom => "줌 반전",

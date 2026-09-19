@@ -251,6 +251,10 @@ impl App {
                 ui_resp.close_menu_requested = true;
             }
 
+            if cfg.show_dimensions && has_model && !is_loading {
+                overlay::render_dimensions_overlay(ctx, lang, self.current_model_size);
+            }
+
             if menu_open {
                 let menu_resp = render_context_menu(ctx, menu_pos, cfg, has_model);
                 let open_dialog = ui_resp.open_file_dialog || menu_resp.open_file_dialog;

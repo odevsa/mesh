@@ -37,7 +37,7 @@ pub struct Config {
     pub show_axis_direction: bool,
     pub model_position: ModelPosition,
     pub show_dummy_box: bool,
-    #[serde(default)]
+    pub show_dimensions: bool,
     pub language: Language,
 }
 
@@ -63,6 +63,7 @@ impl Default for Config {
             show_axis_direction: true,
             model_position: ModelPosition::Above,
             show_dummy_box: false,
+            show_dimensions: true,
             language: Language::Auto,
         }
     }

@@ -21,6 +21,8 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::Object => "Objeto:",
         TextKey::ControlsAndScale => "Controles y Escala",
         TextKey::ShowDummyBox => "Mostrar Caja de Prueba",
+        TextKey::ShowDimensions => "Mostrar Dimensiones",
+        TextKey::Dimensions => "Dimensiones",
         TextKey::Scale => "Escala",
         TextKey::SmoothOrbit => "Órbita Suave",
         TextKey::InvertZoom => "Invertir Zoom",

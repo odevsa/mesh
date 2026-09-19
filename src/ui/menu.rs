@@ -172,6 +172,9 @@ pub fn render_context_menu(
                                 resp.config_changed = true;
                                 resp.dummy_box_changed = true;
                             }
+                            if ui.checkbox(&mut cfg.show_dimensions, lang.t(TextKey::ShowDimensions)).changed() {
+                                resp.config_changed = true;
+                            }
                             if ui.add(egui::Slider::new(&mut cfg.object_scale, 0.1..=10.0).text(lang.t(TextKey::Scale))).changed() {
                                 resp.config_changed = true;
                                 resp.scale_changed = true;

@@ -20,6 +20,8 @@ pub enum TextKey {
     Object,
     ControlsAndScale,
     ShowDummyBox,
+    ShowDimensions,
+    Dimensions,
     Scale,
     SmoothOrbit,
     InvertZoom,
