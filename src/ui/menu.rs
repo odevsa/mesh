@@ -8,6 +8,7 @@ pub struct UiResponse {
     pub reset_camera_requested: bool,
     pub reset_defaults_requested: bool,
     pub close_app_requested: bool,
+    pub open_about_requested: bool,
     pub config_changed: bool,
     pub bg_changed: bool,
     pub obj_color_changed: bool,
@@ -209,6 +210,11 @@ pub fn render_context_menu(
                         }
 
                         ui.separator();
+
+                        if menu_button(ui, "About").clicked() {
+                            resp.open_about_requested = true;
+                            resp.close_menu_requested = true;
+                        }
 
                         if menu_button(ui, "Exit").clicked() {
                             resp.close_app_requested = true;

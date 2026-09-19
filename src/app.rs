@@ -28,6 +28,7 @@ pub struct App {
     last_was_loading: bool,
     menu_pos: egui::Pos2,
     has_model: bool,
+    show_about: bool,
 }
 
 impl App {
@@ -153,6 +154,7 @@ impl App {
             last_was_loading: false,
             menu_pos: egui::pos2(120.0, 120.0),
             has_model: false,
+            show_about: false,
         }
     }
 
@@ -242,10 +244,14 @@ impl App {
                 let menu_resp = render_context_menu(ctx, menu_pos, cfg, has_model);
                 let open_dialog = ui_resp.open_file_dialog || menu_resp.open_file_dialog;
                 let close_menu = ui_resp.close_menu_requested || menu_resp.close_menu_requested;
+                let open_about = ui_resp.open_about_requested || menu_resp.open_about_requested;
                 ui_resp = menu_resp;
                 ui_resp.open_file_dialog = open_dialog;
                 ui_resp.close_menu_requested = close_menu;
+                ui_resp.open_about_requested = open_about;
             }
+
+            overlay::render_about_dialog(ctx, &mut self.show_about);
         });
 
         if ui_resp.close_menu_requested {
@@ -274,6 +280,10 @@ impl App {
 
         if resp.close_app_requested {
             self.camera.should_close = true;
+        }
+
+        if resp.open_about_requested {
+            self.show_about = true;
         }
 
         if resp.config_changed {

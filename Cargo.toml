@@ -1,6 +1,6 @@
 [package]
 name = "mesh"
-version = "0.1.4"
+version = "0.1.6"
 edition = "2024"
 
 [dependencies]
@@ -17,6 +17,7 @@ tobj = "2.0"
 gltf = "1.4"
 quick-xml = "0.29"
 zip = "0.6"
+image = "0.25"
 
 [features]
 default = []
