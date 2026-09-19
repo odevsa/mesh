@@ -31,6 +31,7 @@ impl Loader for GltfLoader {
 
                 for mesh in gltf_doc.meshes() {
                     for prim in mesh.primitives() {
+                        let base_vertex = positions.len() as u32;
                         let r = prim.reader(|buffer| Some(&buffers[buffer.index()]));
                         if let Some(iter) = r.read_positions() {
                             for p in iter {
@@ -46,13 +47,15 @@ impl Loader for GltfLoader {
                             let collected: Vec<u32> = read_indices.into_u32().collect();
                             for chunk in collected.chunks(3) {
                                 if chunk.len() == 3 {
-                                    indices.push([chunk[0], chunk[1], chunk[2]]);
+                                    indices.push([chunk[0] + base_vertex, chunk[1] + base_vertex, chunk[2] + base_vertex]);
                                 }
                             }
                         } else {
-                            let count = positions.len() as u32;
+                            let count = (positions.len() as u32) - base_vertex;
                             for i in (0..count).step_by(3) {
-                                indices.push([i, i + 1, i + 2]);
+                                if i + 2 < count {
+                                    indices.push([base_vertex + i, base_vertex + i + 1, base_vertex + i + 2]);
+                                }
                             }
                         }
                     }

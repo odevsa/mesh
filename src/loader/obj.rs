@@ -39,6 +39,7 @@ impl Loader for ObjLoader {
                 let mut indices = Vec::new();
                 for m in models {
                     let mesh = m.mesh;
+                    let base_vertex = positions.len() as u32;
                     for v in mesh.positions.chunks(3) {
                         positions.push([v[0] as f32, v[1] as f32, v[2] as f32]);
                     }
@@ -47,7 +48,11 @@ impl Loader for ObjLoader {
                     }
                     for idx_chunk in mesh.indices.chunks(3) {
                         if idx_chunk.len() == 3 {
-                            indices.push([idx_chunk[0] as u32, idx_chunk[1] as u32, idx_chunk[2] as u32]);
+                            indices.push([
+                                idx_chunk[0] as u32 + base_vertex,
+                                idx_chunk[1] as u32 + base_vertex,
+                                idx_chunk[2] as u32 + base_vertex,
+                            ]);
                         }
                     }
                 }
