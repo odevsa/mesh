@@ -19,6 +19,7 @@ pub struct UiResponse {
     pub axes_rebuild: bool,
     pub controls_changed: bool,
     pub dummy_box_changed: bool,
+    pub materials_changed: bool,
     pub close_menu_requested: bool,
 }
 
@@ -174,6 +175,10 @@ pub fn render_context_menu(
                             }
                             if ui.checkbox(&mut cfg.show_dimensions, lang.t(TextKey::ShowDimensions)).changed() {
                                 resp.config_changed = true;
+                            }
+                            if ui.checkbox(&mut cfg.show_materials, lang.t(TextKey::ShowMaterials)).changed() {
+                                resp.config_changed = true;
+                                resp.materials_changed = true;
                             }
                             if ui.add(egui::Slider::new(&mut cfg.object_scale, 0.1..=10.0).text(lang.t(TextKey::Scale))).changed() {
                                 resp.config_changed = true;

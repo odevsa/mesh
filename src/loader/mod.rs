@@ -7,11 +7,22 @@ pub mod obj;
 pub mod gltf;
 pub mod fbx;
 
+#[derive(Debug, Clone)]
+pub struct SubMesh {
+    pub positions: Vec<[f32; 3]>,
+    #[allow(dead_code)]
+    pub normals: Vec<[f32; 3]>,
+    pub indices: Vec<[u32; 3]>,
+    pub color: Option<[f32; 4]>,
+}
+
+#[derive(Debug, Clone)]
 pub struct MeshData {
     pub positions: Vec<[f32; 3]>,
     #[allow(dead_code)]
     pub normals: Vec<[f32; 3]>,
     pub indices: Vec<[u32; 3]>,
+    pub submeshes: Vec<SubMesh>,
 }
 
 pub trait Loader: Send + Sync {

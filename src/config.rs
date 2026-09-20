@@ -37,8 +37,16 @@ pub struct Config {
     pub show_axis_direction: bool,
     pub model_position: ModelPosition,
     pub show_dummy_box: bool,
+    #[serde(default)]
     pub show_dimensions: bool,
+    #[serde(default = "default_true")]
+    pub show_materials: bool,
+    #[serde(default)]
     pub language: Language,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -64,6 +72,7 @@ impl Default for Config {
             model_position: ModelPosition::Above,
             show_dummy_box: false,
             show_dimensions: true,
+            show_materials: true,
             language: Language::Auto,
         }
     }

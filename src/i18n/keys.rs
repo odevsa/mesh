@@ -21,6 +21,7 @@ pub enum TextKey {
     ControlsAndScale,
     ShowDummyBox,
     ShowDimensions,
+    ShowMaterials,
     Dimensions,
     Scale,
     SmoothOrbit,

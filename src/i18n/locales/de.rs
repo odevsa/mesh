@@ -22,6 +22,7 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::ControlsAndScale => "Steuerung & Skalierung",
         TextKey::ShowDummyBox => "Testbox anzeigen",
         TextKey::ShowDimensions => "Abmessungen anzeigen",
+        TextKey::ShowMaterials => "Materialien anzeigen",
         TextKey::Dimensions => "Abmessungen",
         TextKey::Scale => "Skalierung",
         TextKey::SmoothOrbit => "Sanfte Orbitierung",

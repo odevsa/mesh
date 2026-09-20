@@ -28,6 +28,7 @@ pub struct App {
     last_was_loading: bool,
     menu_pos: egui::Pos2,
     has_model: bool,
+    current_mesh_data: Option<MeshData>,
     show_about: bool,
     fonts_initialized: bool,
 }
@@ -155,6 +156,7 @@ impl App {
             last_was_loading: false,
             menu_pos: egui::pos2(120.0, 120.0),
             has_model: false,
+            current_mesh_data: None,
             show_about: false,
             fonts_initialized: false,
         }
@@ -314,8 +316,12 @@ impl App {
             self.apply_background_color();
         }
 
-        if resp.obj_color_changed {
-            self.apply_object_color();
+        if resp.obj_color_changed || resp.materials_changed {
+            if self.has_model {
+                self.rebuild_model_node();
+            } else {
+                self.apply_object_color();
+            }
         }
 
         if resp.scale_changed || resp.position_changed {
@@ -346,6 +352,7 @@ impl App {
 
     fn unload_model(&mut self) {
         self.has_model = false;
+        self.current_mesh_data = None;
         self.base_scale_factor = 1.0;
         self.current_model_size = Vec3::new(0.5, 0.5, 0.5);
 
@@ -487,45 +494,72 @@ impl App {
         self.camera.inner.set_dist_step(dist_step_value);
     }
 
+    fn rebuild_model_node(&mut self) {
+        let Some(ref mesh) = self.current_mesh_data else { return };
+
+        let (min, max) = model::compute_bounds(&mesh.positions);
+        let center_offset = (min + max) / 2.0;
+
+        let size = (max - min).abs();
+        self.current_model_size = size;
+        let max_dim = size.x.max(size.y).max(size.z).max(1e-6);
+        self.base_scale_factor = 1.0 / max_dim;
+        let scale_factor = self.cfg.object_scale * self.base_scale_factor;
+
+        let z_offset = model::compute_model_z_offset(
+            self.cfg.model_position,
+            self.current_model_size.z,
+            scale_factor,
+        );
+        let model_center = Vec3::new(0.0, 0.0, z_offset);
+
+        let default_color = Color::new(
+            self.cfg.object_color[0] as f32 / 255.0,
+            self.cfg.object_color[1] as f32 / 255.0,
+            self.cfg.object_color[2] as f32 / 255.0,
+            1.0,
+        );
+
+        let mut group_node = self.scene_root.add_group();
+
+        if mesh.submeshes.is_empty() {
+            let verts_glam = model::center_vertices(&mesh.positions, center_offset);
+            let mut child = group_node.add_trimesh(verts_glam, mesh.indices.clone(), Vec3::new(1.0, 1.0, 1.0), false);
+            child.set_color(default_color);
+        } else {
+            for sub in &mesh.submeshes {
+                if sub.positions.is_empty() || sub.indices.is_empty() {
+                    continue;
+                }
+                let sub_verts = model::center_vertices(&sub.positions, center_offset);
+                let mut child = group_node.add_trimesh(sub_verts, sub.indices.clone(), Vec3::new(1.0, 1.0, 1.0), false);
+
+                if self.cfg.show_materials {
+                    if let Some(col) = sub.color {
+                        child.set_color(Color::new(col[0], col[1], col[2], col[3]));
+                    } else {
+                        child.set_color(default_color);
+                    }
+                } else {
+                    child.set_color(default_color);
+                }
+            }
+        }
+
+        group_node.set_local_scale(scale_factor, scale_factor, scale_factor);
+        group_node.set_position(model_center);
+
+        self.camera.set_object(group_node);
+        self.camera.set_center(model_center);
+        self.has_model = true;
+    }
+
     fn process_incoming_meshes(&mut self) {
         match self.rx.try_recv() {
             Ok(Ok(mesh)) => {
-                let (min, max) = model::compute_bounds(&mesh.positions);
-                let center_offset = (min + max) / 2.0;
-                let verts_glam = model::center_vertices(&mesh.positions, center_offset);
-                let tris = mesh.indices.clone();
-
-                let mut node = self
-                    .scene_root
-                    .add_trimesh(verts_glam, tris, Vec3::new(1.0, 1.0, 1.0), false);
-
-                let current_color = Color::new(
-                    self.cfg.object_color[0] as f32 / 255.0,
-                    self.cfg.object_color[1] as f32 / 255.0,
-                    self.cfg.object_color[2] as f32 / 255.0,
-                    1.0,
-                );
-                node.set_color(current_color);
-
-                let size = (max - min).abs();
-                self.current_model_size = size;
-                let max_dim = size.x.max(size.y).max(size.z).max(1e-6);
-                self.base_scale_factor = 1.0 / max_dim;
-                let scale_factor = self.cfg.object_scale * self.base_scale_factor;
-                node.set_local_scale(scale_factor, scale_factor, scale_factor);
-
-                let z_offset = model::compute_model_z_offset(
-                    self.cfg.model_position,
-                    self.current_model_size.z,
-                    scale_factor,
-                );
-                let model_center = Vec3::new(0.0, 0.0, z_offset);
-                node.set_position(model_center);
-
-                self.camera.set_object(node);
+                self.current_mesh_data = Some(mesh);
+                self.rebuild_model_node();
                 self.camera.set_loading(false);
-                self.camera.set_center(model_center);
-                self.has_model = true;
             }
             Ok(Err(err)) => {
                 eprintln!("{}", err);

@@ -29,39 +29,64 @@ impl Loader for GltfLoader {
                 let mut normals = Vec::new();
                 let mut indices = Vec::new();
 
+                let mut submeshes = Vec::new();
+
                 for mesh in gltf_doc.meshes() {
                     for prim in mesh.primitives() {
                         let base_vertex = positions.len() as u32;
+                        let mat = prim.material();
+                        let pbr = mat.pbr_metallic_roughness();
+                        let color = Some(pbr.base_color_factor());
+
+                        let mut sub_positions = Vec::new();
+                        let mut sub_normals = Vec::new();
+                        let mut sub_indices = Vec::new();
+
                         let r = prim.reader(|buffer| Some(&buffers[buffer.index()]));
                         if let Some(iter) = r.read_positions() {
                             for p in iter {
-                                positions.push([p[0] as f32, p[1] as f32, p[2] as f32]);
+                                let pos = [p[0] as f32, -p[2] as f32, p[1] as f32];
+                                sub_positions.push(pos);
+                                positions.push(pos);
                             }
                         }
                         if let Some(iter) = r.read_normals() {
                             for n in iter {
-                                normals.push([n[0] as f32, n[1] as f32, n[2] as f32]);
+                                let norm = [n[0] as f32, -n[2] as f32, n[1] as f32];
+                                sub_normals.push(norm);
+                                normals.push(norm);
                             }
                         }
                         if let Some(read_indices) = r.read_indices() {
                             let collected: Vec<u32> = read_indices.into_u32().collect();
                             for chunk in collected.chunks(3) {
                                 if chunk.len() == 3 {
-                                    indices.push([chunk[0] + base_vertex, chunk[1] + base_vertex, chunk[2] + base_vertex]);
+                                    let tri = [chunk[0], chunk[1], chunk[2]];
+                                    sub_indices.push(tri);
+                                    indices.push([tri[0] + base_vertex, tri[1] + base_vertex, tri[2] + base_vertex]);
                                 }
                             }
                         } else {
-                            let count = (positions.len() as u32) - base_vertex;
+                            let count = sub_positions.len() as u32;
                             for i in (0..count).step_by(3) {
                                 if i + 2 < count {
-                                    indices.push([base_vertex + i, base_vertex + i + 1, base_vertex + i + 2]);
+                                    let tri = [i, i + 1, i + 2];
+                                    sub_indices.push(tri);
+                                    indices.push([tri[0] + base_vertex, tri[1] + base_vertex, tri[2] + base_vertex]);
                                 }
                             }
                         }
+
+                        submeshes.push(super::SubMesh {
+                            positions: sub_positions,
+                            normals: sub_normals,
+                            indices: sub_indices,
+                            color,
+                        });
                     }
                 }
 
-                Ok(MeshData { positions, normals, indices })
+                Ok(MeshData { positions, normals, indices, submeshes })
             }
             Err(e) => Err(format!("gltf parse error: {}", e)),
         }

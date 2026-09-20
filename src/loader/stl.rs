@@ -40,7 +40,13 @@ impl Loader for StlLoader {
                     let base = (positions.len() - 3) as u32;
                     indices.push([base, base + 1, base + 2]);
                 }
-                Ok(MeshData { positions, normals, indices })
+                let submesh = super::SubMesh {
+                    positions: positions.clone(),
+                    normals: normals.clone(),
+                    indices: indices.clone(),
+                    color: None,
+                };
+                Ok(MeshData { positions, normals, indices, submeshes: vec![submesh] })
             }
             Err(e) => Err(format!("stl parse error: {}", e)),
         }

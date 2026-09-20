@@ -22,6 +22,7 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::ControlsAndScale => "控制与缩放",
         TextKey::ShowDummyBox => "显示占位立方体",
         TextKey::ShowDimensions => "显示尺寸",
+        TextKey::ShowMaterials => "显示材质",
         TextKey::Dimensions => "尺寸",
         TextKey::Scale => "缩放",
         TextKey::SmoothOrbit => "平滑轨道",
