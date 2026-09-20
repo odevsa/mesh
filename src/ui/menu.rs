@@ -152,10 +152,6 @@ pub fn render_context_menu(
                         });
 
                         let r_colors = ui.collapsing(lang.t(TextKey::Colors), |ui| {
-                            if ui.checkbox(&mut cfg.show_materials, lang.t(TextKey::ShowMaterials)).changed() {
-                                resp.config_changed = true;
-                                resp.materials_changed = true;
-                            }
                             ui.horizontal(|ui| {
                                 ui.label(lang.t(TextKey::Background));
                                 if ui.color_edit_button_srgb(&mut cfg.background).changed() {
@@ -180,6 +176,29 @@ pub fn render_context_menu(
                             if ui.checkbox(&mut cfg.show_dimensions, lang.t(TextKey::ShowDetails)).changed() {
                                 resp.config_changed = true;
                             }
+                            ui.horizontal(|ui| {
+                                ui.label(lang.t(TextKey::MaterialMode));
+                                egui::ComboBox::from_id_salt("material_mode_combo")
+                                    .selected_text(match cfg.material_mode {
+                                        crate::config::MaterialMode::Material => lang.t(TextKey::Material),
+                                        crate::config::MaterialMode::Solid => lang.t(TextKey::Solid),
+                                        crate::config::MaterialMode::Wireframe => lang.t(TextKey::Wireframe),
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        if ui.selectable_value(&mut cfg.material_mode, crate::config::MaterialMode::Material, lang.t(TextKey::Material)).changed() {
+                                            resp.config_changed = true;
+                                            resp.materials_changed = true;
+                                        }
+                                        if ui.selectable_value(&mut cfg.material_mode, crate::config::MaterialMode::Solid, lang.t(TextKey::Solid)).changed() {
+                                            resp.config_changed = true;
+                                            resp.materials_changed = true;
+                                        }
+                                        if ui.selectable_value(&mut cfg.material_mode, crate::config::MaterialMode::Wireframe, lang.t(TextKey::Wireframe)).changed() {
+                                            resp.config_changed = true;
+                                            resp.materials_changed = true;
+                                        }
+                                    });
+                            });
                             if ui.add(egui::Slider::new(&mut cfg.object_scale, 0.1..=10.0).text(lang.t(TextKey::Scale))).changed() {
                                 resp.config_changed = true;
                                 resp.scale_changed = true;

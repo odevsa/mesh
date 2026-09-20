@@ -528,7 +528,18 @@ impl App {
         if mesh.submeshes.is_empty() {
             let verts_glam = model::center_vertices(&mesh.positions, center_offset);
             let mut child = group_node.add_trimesh(verts_glam, mesh.indices.clone(), Vec3::new(1.0, 1.0, 1.0), false);
-            child.set_color(default_color);
+            match self.cfg.material_mode {
+                crate::config::MaterialMode::Material | crate::config::MaterialMode::Solid => {
+                    child.set_surface_rendering_activation(true);
+                    child.set_lines_width(0.0, false);
+                    child.set_color(default_color);
+                }
+                crate::config::MaterialMode::Wireframe => {
+                    child.set_surface_rendering_activation(false);
+                    child.set_lines_color(Some(default_color));
+                    child.set_lines_width(1.0, false);
+                }
+            }
         } else {
             for sub in &mesh.submeshes {
                 if sub.positions.is_empty() || sub.indices.is_empty() {
@@ -537,14 +548,31 @@ impl App {
                 let sub_verts = model::center_vertices(&sub.positions, center_offset);
                 let mut child = group_node.add_trimesh(sub_verts, sub.indices.clone(), Vec3::new(1.0, 1.0, 1.0), false);
 
-                if self.cfg.show_materials {
-                    if let Some(col) = sub.color {
-                        child.set_color(Color::new(col[0], col[1], col[2], col[3]));
-                    } else {
+                match self.cfg.material_mode {
+                    crate::config::MaterialMode::Material => {
+                        child.set_surface_rendering_activation(true);
+                        child.set_lines_width(0.0, false);
+                        if let Some(col) = sub.color {
+                            child.set_color(Color::new(col[0], col[1], col[2], col[3]));
+                        } else {
+                            child.set_color(default_color);
+                        }
+                    }
+                    crate::config::MaterialMode::Solid => {
+                        child.set_surface_rendering_activation(true);
+                        child.set_lines_width(0.0, false);
                         child.set_color(default_color);
                     }
-                } else {
-                    child.set_color(default_color);
+                    crate::config::MaterialMode::Wireframe => {
+                        child.set_surface_rendering_activation(false);
+                        let line_col = if let Some(col) = sub.color {
+                            Color::new(col[0], col[1], col[2], col[3])
+                        } else {
+                            default_color
+                        };
+                        child.set_lines_color(Some(line_col));
+                        child.set_lines_width(1.0, false);
+                    }
                 }
             }
         }
