@@ -77,7 +77,7 @@ jobs:
       - name: Build Inno Setup Installer
         shell: cmd
         run: |
-          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.get_version.outputs.VERSION }} /DTargetArch=${{ matrix.arch }} /DTargetTriplet=${{ matrix.target }} installer.iss
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.get_version.outputs.VERSION }} /DTargetArch=${{ matrix.arch }} /DTargetTriplet=${{ matrix.target }} assets/installer.iss
 
       - name: Upload Artifacts (Local or CI)
         uses: actions/upload-artifact@v4
