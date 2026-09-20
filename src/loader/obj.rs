@@ -1,6 +1,7 @@
-use super::{Loader, MeshData};
+use super::{Loader, MeshData, SubMesh};
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
-use std::io::Read;
 
 pub struct ObjLoader {}
 
@@ -15,76 +16,145 @@ impl Loader for ObjLoader {
     }
 
     fn load(&self, path: &Path, reader: Box<dyn Read>) -> Result<MeshData, String> {
-        use std::io::BufReader;
-        let mut buf = Vec::new();
-        let mut r = BufReader::new(reader);
-        r.read_to_end(&mut buf).map_err(|e| format!("read: {}", e))?;
-        let mut cursor = std::io::Cursor::new(buf);
-        let material_loader = |p: &std::path::Path| -> tobj::MTLLoadResult {
-            let base = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-            let mtl_path = base.join(p);
-            if mtl_path.exists() {
-                let f = std::fs::File::open(&mtl_path).map_err(|_| tobj::LoadError::OpenFileFailed)?;
-                let mut br = std::io::BufReader::new(f);
-                tobj::load_mtl_buf(&mut br)
-            } else {
-                Ok((Vec::new(), std::collections::HashMap::new()))
+        let mut buf_reader = BufReader::new(reader);
+        let mut positions = Vec::new();
+        let mut normals = Vec::new();
+        let mut raw_normals = Vec::new();
+        let mut indices = Vec::new();
+
+        let mut mtl_colors: HashMap<String, [f32; 4]> = HashMap::new();
+        let mut current_color: Option<[f32; 4]> = None;
+        let mut color_groups: HashMap<Option<[u8; 4]>, Vec<[u32; 3]>> = HashMap::new();
+
+        let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+
+        let mut line = String::new();
+        while buf_reader.read_line(&mut line).map_err(|e| format!("read obj: {}", e))? > 0 {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                line.clear();
+                continue;
             }
-        };
 
-        match tobj::load_obj_buf(&mut cursor, true, material_loader) {
-            Ok((models, materials)) => {
-                let mut positions = Vec::new();
-                let mut normals = Vec::new();
-                let mut indices = Vec::new();
-                let mut submeshes = Vec::new();
-
-                for m in models {
-                    let mesh = m.mesh;
-                    let base_vertex = positions.len() as u32;
-
-                    let mat_color = if let Some(mat_id) = mesh.material_id {
-                        materials.get(mat_id).map(|mat| [mat.diffuse[0], mat.diffuse[1], mat.diffuse[2], 1.0])
-                    } else {
-                        None
-                    };
-
-                    let mut sub_positions = Vec::new();
-                    let mut sub_normals = Vec::new();
-                    let mut sub_indices = Vec::new();
-
-                    for v in mesh.positions.chunks(3) {
-                        let p = [v[0] as f32, -v[2] as f32, v[1] as f32];
-                        sub_positions.push(p);
-                        positions.push(p);
+            let mut parts = trimmed.split_whitespace();
+            if let Some(kw) = parts.next() {
+                match kw {
+                    "v" => {
+                        let x: f32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                        let y: f32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                        let z: f32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                        positions.push([x, -z, y]);
                     }
-                    for n in mesh.normals.chunks(3) {
-                        let norm = [n[0] as f32, -n[2] as f32, n[1] as f32];
-                        sub_normals.push(norm);
-                        normals.push(norm);
+                    "vn" => {
+                        let nx: f32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                        let ny: f32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                        let nz: f32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                        raw_normals.push([nx, -nz, ny]);
                     }
-                    for idx_chunk in mesh.indices.chunks(3) {
-                        if idx_chunk.len() == 3 {
-                            let tri = [idx_chunk[0] as u32, idx_chunk[1] as u32, idx_chunk[2] as u32];
-                            sub_indices.push(tri);
-                            indices.push([
-                                tri[0] + base_vertex,
-                                tri[1] + base_vertex,
-                                tri[2] + base_vertex,
-                            ]);
+                    "mtllib" => {
+                        if let Some(mtl_file) = parts.next() {
+                            let mtl_path = base_dir.join(mtl_file);
+                            if let Ok(f) = std::fs::File::open(&mtl_path) {
+                                let mut mtl_reader = BufReader::new(f);
+                                let mut mtl_line = String::new();
+                                let mut cur_mat = String::new();
+                                while mtl_reader.read_line(&mut mtl_line).unwrap_or(0) > 0 {
+                                    let mtrimmed = mtl_line.trim();
+                                    let mut mparts = mtrimmed.split_whitespace();
+                                    if let Some(mkw) = mparts.next() {
+                                        if mkw == "newmtl" {
+                                            if let Some(name) = mparts.next() {
+                                                cur_mat = name.to_string();
+                                            }
+                                        } else if mkw == "Kd" && !cur_mat.is_empty() {
+                                            let r: f32 = mparts.next().and_then(|s| s.parse().ok()).unwrap_or(0.8);
+                                            let g: f32 = mparts.next().and_then(|s| s.parse().ok()).unwrap_or(0.8);
+                                            let b: f32 = mparts.next().and_then(|s| s.parse().ok()).unwrap_or(0.8);
+                                            mtl_colors.insert(cur_mat.clone(), [r, g, b, 1.0]);
+                                        }
+                                    }
+                                    mtl_line.clear();
+                                }
+                            }
                         }
                     }
+                    "usemtl" => {
+                        if let Some(mat_name) = parts.next() {
+                            current_color = mtl_colors.get(mat_name).copied();
+                        }
+                    }
+                    "f" => {
+                        let mut poly_verts = Vec::new();
+                        for vert_str in parts {
+                            let first_num = vert_str.split('/').next().unwrap_or("");
+                            if let Ok(idx) = first_num.parse::<i32>() {
+                                let pos_idx = if idx > 0 {
+                                    (idx - 1) as u32
+                                } else if idx < 0 {
+                                    (positions.len() as i32 + idx) as u32
+                                } else {
+                                    0
+                                };
+                                poly_verts.push(pos_idx);
+                            }
+                        }
 
-                    submeshes.push(super::SubMesh {
-                        positions: sub_positions,
-                        normals: sub_normals,
-                        indices: sub_indices,
-                        color: mat_color,
-                    });
+                        if poly_verts.len() >= 3 {
+                            let color_key = current_color.map(|c| [
+                                (c[0].clamp(0.0, 1.0) * 255.0) as u8,
+                                (c[1].clamp(0.0, 1.0) * 255.0) as u8,
+                                (c[2].clamp(0.0, 1.0) * 255.0) as u8,
+                                (c[3].clamp(0.0, 1.0) * 255.0) as u8,
+                            ]);
+                            let grp_tris = color_groups.entry(color_key).or_default();
+
+                            for i in 1..poly_verts.len() - 1 {
+                                let tri = [poly_verts[0], poly_verts[i], poly_verts[i + 1]];
+                                indices.push(tri);
+                                grp_tris.push(tri);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-                Ok(MeshData { positions, normals, indices, submeshes })
             }
-            Err(e) => Err(format!("obj parse error: {}", e)),
+            line.clear();
         }
+
+        if !raw_normals.is_empty() {
+            normals = raw_normals;
+        }
+
+        let mut submeshes = Vec::new();
+        for (color_key, sub_ind) in color_groups {
+            let color = color_key.map(|c| [
+                c[0] as f32 / 255.0,
+                c[1] as f32 / 255.0,
+                c[2] as f32 / 255.0,
+                c[3] as f32 / 255.0,
+            ]);
+            submeshes.push(SubMesh {
+                positions: positions.clone(),
+                normals: normals.clone(),
+                indices: sub_ind,
+                color,
+            });
+        }
+
+        if submeshes.is_empty() {
+            submeshes.push(SubMesh {
+                positions: positions.clone(),
+                normals: normals.clone(),
+                indices: indices.clone(),
+                color: None,
+            });
+        }
+
+        Ok(MeshData {
+            positions,
+            normals,
+            indices,
+            submeshes,
+        })
     }
 }

@@ -119,8 +119,34 @@ pub fn render_about_dialog(ctx: &Context, show_about: &mut bool, lang: Language)
         });
 }
 
-pub fn render_dimensions_overlay(ctx: &Context, lang: Language, size: kiss3d::glamx::Vec3) {
-    egui::Area::new(egui::Id::new("dimensions_overlay"))
+#[derive(Debug, Clone, Copy)]
+pub struct ModelStats {
+    pub vertices: usize,
+    pub lines: usize,
+    pub faces: usize,
+}
+
+fn format_count(val: usize) -> String {
+    let s = val.to_string();
+    let bytes = s.as_bytes();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    let len = bytes.len();
+    for (i, &b) in bytes.iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(b as char);
+    }
+    result
+}
+
+pub fn render_details_overlay(
+    ctx: &Context,
+    lang: Language,
+    size: kiss3d::glamx::Vec3,
+    stats: Option<ModelStats>,
+) {
+    egui::Area::new(egui::Id::new("details_overlay"))
         .anchor(Align2::RIGHT_BOTTOM, Vec2::new(-15.0, -15.0))
         .order(egui::Order::Foreground)
         .show(ctx, |ui| {
@@ -135,7 +161,7 @@ pub fn render_dimensions_overlay(ctx: &Context, lang: Language, size: kiss3d::gl
                     format!("{:.2}", rounded)
                 }
             }
-            let text = format!(
+            let dim_text = format!(
                 "X: {}   Y: {}   Z: {}",
                 format_dim(size.x),
                 format_dim(size.y),
@@ -144,7 +170,28 @@ pub fn render_dimensions_overlay(ctx: &Context, lang: Language, size: kiss3d::gl
 
             ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
                 ui.label(egui::RichText::new(lang.t(TextKey::Dimensions)).strong().size(12.0));
-                ui.label(egui::RichText::new(text).size(12.0));
+                ui.label(egui::RichText::new(dim_text).size(12.0));
+                if let Some(st) = stats {
+                    ui.label(egui::RichText::new(lang.t(TextKey::Statistics)).strong().size(12.0));
+                    let vertices_text = format!(
+                        "{}: {}",
+                        lang.t(TextKey::Vertices),
+                        format_count(st.vertices),
+                    );
+                    ui.label(egui::RichText::new(vertices_text).size(12.0));
+                    let lines_text = format!(
+                        "{}: {}",
+                        lang.t(TextKey::Lines),
+                        format_count(st.lines),
+                    );
+                    ui.label(egui::RichText::new(lines_text).size(12.0));
+                    let faces_text = format!(
+                        "{}: {}",
+                        lang.t(TextKey::Faces),
+                        format_count(st.faces)
+                    );
+                    ui.label(egui::RichText::new(faces_text).size(12.0));
+                }
             });
         });
 }

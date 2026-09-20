@@ -29,6 +29,7 @@ pub struct App {
     menu_pos: egui::Pos2,
     has_model: bool,
     current_mesh_data: Option<MeshData>,
+    current_model_stats: Option<overlay::ModelStats>,
     show_about: bool,
     fonts_initialized: bool,
 }
@@ -157,6 +158,7 @@ impl App {
             menu_pos: egui::pos2(120.0, 120.0),
             has_model: false,
             current_mesh_data: None,
+            current_model_stats: None,
             show_about: false,
             fonts_initialized: false,
         }
@@ -254,7 +256,7 @@ impl App {
             }
 
             if cfg.show_dimensions && has_model && !is_loading {
-                overlay::render_dimensions_overlay(ctx, lang, self.current_model_size);
+                overlay::render_details_overlay(ctx, lang, self.current_model_size, self.current_model_stats);
             }
 
             if menu_open {
@@ -353,6 +355,7 @@ impl App {
     fn unload_model(&mut self) {
         self.has_model = false;
         self.current_mesh_data = None;
+        self.current_model_stats = None;
         self.base_scale_factor = 1.0;
         self.current_model_size = Vec3::new(0.5, 0.5, 0.5);
 
@@ -557,6 +560,7 @@ impl App {
     fn process_incoming_meshes(&mut self) {
         match self.rx.try_recv() {
             Ok(Ok(mesh)) => {
+                self.current_model_stats = Some(compute_stats(&mesh));
                 self.current_mesh_data = Some(mesh);
                 self.rebuild_model_node();
                 self.camera.set_loading(false);
@@ -579,6 +583,51 @@ impl App {
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {}
+        }
+    }
+}
+
+fn compute_stats(mesh: &MeshData) -> overlay::ModelStats {
+    let vertices = mesh.positions.len();
+    if !mesh.indices.is_empty() {
+        let faces = mesh.indices.len();
+        let mut edges = std::collections::HashSet::with_capacity(faces * 3 / 2);
+        for tri in &mesh.indices {
+            let (a, b, c) = (tri[0], tri[1], tri[2]);
+            if a != b {
+                let e = if a < b { (a, b) } else { (b, a) };
+                edges.insert(e);
+            }
+            if b != c {
+                let e = if b < c { (b, c) } else { (c, b) };
+                edges.insert(e);
+            }
+            if c != a {
+                let e = if c < a { (c, a) } else { (a, c) };
+                edges.insert(e);
+            }
+        }
+        overlay::ModelStats {
+            vertices,
+            lines: edges.len(),
+            faces,
+        }
+    } else {
+        let count = mesh.positions.len();
+        let faces = count / 3;
+        let mut edges = std::collections::HashSet::with_capacity(faces * 3 / 2);
+        for i in (0..count).step_by(3) {
+            if i + 2 < count {
+                let (a, b, c) = (i as u32, (i + 1) as u32, (i + 2) as u32);
+                edges.insert((a, b));
+                edges.insert((b, c));
+                edges.insert((c, a));
+            }
+        }
+        overlay::ModelStats {
+            vertices,
+            lines: edges.len(),
+            faces,
         }
     }
 }

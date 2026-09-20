@@ -1,4 +1,4 @@
-use super::{Loader, MeshData};
+use super::{Loader, MeshData, SubMesh};
 use std::path::Path;
 use std::io::Read;
 
@@ -22,31 +22,43 @@ impl Loader for StlLoader {
         let mut cursor = std::io::Cursor::new(buf);
         match stl_io::read_stl(&mut cursor) {
             Ok(im) => {
-                let mut positions = Vec::new();
-                let mut normals = Vec::new();
-                let mut indices = Vec::new();
-                for face in im.faces.iter() {
+                let positions: Vec<[f32; 3]> = im.vertices.iter().map(|v| [v[0] as f32, v[1] as f32, v[2] as f32]).collect();
+                let indices: Vec<[u32; 3]> = im.faces.iter().map(|f| [f.vertices[0] as u32, f.vertices[1] as u32, f.vertices[2] as u32]).collect();
+
+                let mut sub_positions = Vec::with_capacity(im.faces.len() * 3);
+                let mut sub_normals = Vec::with_capacity(im.faces.len() * 3);
+                let mut sub_indices = Vec::with_capacity(im.faces.len());
+
+                for face in &im.faces {
                     let ia = face.vertices[0] as usize;
                     let ib = face.vertices[1] as usize;
                     let ic = face.vertices[2] as usize;
-                    for &i in &[ia, ib, ic] {
-                        let v = im.vertices[i];
-                        positions.push([v[0] as f32, v[1] as f32, v[2] as f32]);
+                    if ia < im.vertices.len() && ib < im.vertices.len() && ic < im.vertices.len() {
+                        let va = im.vertices[ia];
+                        let vb = im.vertices[ib];
+                        let vc = im.vertices[ic];
+                        sub_positions.push([va[0] as f32, va[1] as f32, va[2] as f32]);
+                        sub_positions.push([vb[0] as f32, vb[1] as f32, vb[2] as f32]);
+                        sub_positions.push([vc[0] as f32, vc[1] as f32, vc[2] as f32]);
+
+                        let n = face.normal;
+                        let fnorm = [n[0] as f32, n[1] as f32, n[2] as f32];
+                        sub_normals.push(fnorm);
+                        sub_normals.push(fnorm);
+                        sub_normals.push(fnorm);
+
+                        let base = (sub_positions.len() - 3) as u32;
+                        sub_indices.push([base, base + 1, base + 2]);
                     }
-                    let n = face.normal;
-                    normals.push([n[0] as f32, n[1] as f32, n[2] as f32]);
-                    normals.push([n[0] as f32, n[1] as f32, n[2] as f32]);
-                    normals.push([n[0] as f32, n[1] as f32, n[2] as f32]);
-                    let base = (positions.len() - 3) as u32;
-                    indices.push([base, base + 1, base + 2]);
                 }
-                let submesh = super::SubMesh {
-                    positions: positions.clone(),
-                    normals: normals.clone(),
-                    indices: indices.clone(),
+
+                let submesh = SubMesh {
+                    positions: sub_positions,
+                    normals: sub_normals,
+                    indices: sub_indices,
                     color: None,
                 };
-                Ok(MeshData { positions, normals, indices, submeshes: vec![submesh] })
+                Ok(MeshData { positions, normals: Vec::new(), indices, submeshes: vec![submesh] })
             }
             Err(e) => Err(format!("stl parse error: {}", e)),
         }

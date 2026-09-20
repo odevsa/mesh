@@ -152,6 +152,10 @@ pub fn render_context_menu(
                         });
 
                         let r_colors = ui.collapsing(lang.t(TextKey::Colors), |ui| {
+                            if ui.checkbox(&mut cfg.show_materials, lang.t(TextKey::ShowMaterials)).changed() {
+                                resp.config_changed = true;
+                                resp.materials_changed = true;
+                            }
                             ui.horizontal(|ui| {
                                 ui.label(lang.t(TextKey::Background));
                                 if ui.color_edit_button_srgb(&mut cfg.background).changed() {
@@ -173,12 +177,8 @@ pub fn render_context_menu(
                                 resp.config_changed = true;
                                 resp.dummy_box_changed = true;
                             }
-                            if ui.checkbox(&mut cfg.show_dimensions, lang.t(TextKey::ShowDimensions)).changed() {
+                            if ui.checkbox(&mut cfg.show_dimensions, lang.t(TextKey::ShowDetails)).changed() {
                                 resp.config_changed = true;
-                            }
-                            if ui.checkbox(&mut cfg.show_materials, lang.t(TextKey::ShowMaterials)).changed() {
-                                resp.config_changed = true;
-                                resp.materials_changed = true;
                             }
                             if ui.add(egui::Slider::new(&mut cfg.object_scale, 0.1..=10.0).text(lang.t(TextKey::Scale))).changed() {
                                 resp.config_changed = true;
