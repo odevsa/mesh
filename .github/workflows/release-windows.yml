@@ -2,10 +2,7 @@ name: Release Windows
 
 on:
   release:
-    types: [created, published]
-  push:
-    tags:
-      - "v*"
+    types: [published]
   workflow_dispatch:
 
 permissions:
