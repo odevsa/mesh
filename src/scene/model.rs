@@ -1,5 +1,5 @@
 use crate::config::ModelPosition;
-use kiss3d::glamx::Vec3;
+use glam::Vec3;
 
 pub fn compute_model_z_offset(position: ModelPosition, model_height: f32, scale: f32) -> f32 {
     let half_height = (model_height * scale) / 2.0;
@@ -22,12 +22,5 @@ pub fn compute_bounds(positions: &[[f32; 3]]) -> (Vec3, Vec3) {
         max.z = max.z.max(p[2]);
     }
     (min, max)
-}
-
-pub fn center_vertices(positions: &[[f32; 3]], center_offset: Vec3) -> Vec<Vec3> {
-    positions
-        .iter()
-        .map(|p| Vec3::new(p[0], p[1], p[2]) - center_offset)
-        .collect()
 }
 

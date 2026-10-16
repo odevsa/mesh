@@ -5,14 +5,6 @@ use std::collections::HashMap;
 
 pub struct ThreemfLoader {}
 
-fn srgb_to_linear(c: f32) -> f32 {
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
 fn parse_hex_color(s: &str) -> Option<[f32; 4]> {
     let s = s.trim().trim_start_matches('#');
     let (r, g, b, a) = if s.len() == 6 {
@@ -30,7 +22,7 @@ fn parse_hex_color(s: &str) -> Option<[f32; 4]> {
         return None;
     };
 
-    Some([srgb_to_linear(r), srgb_to_linear(g), srgb_to_linear(b), a])
+    Some([r, g, b, a])
 }
 
 fn resolve_paint_color(s: &str, filament_colors: &[[f32; 4]]) -> Option<[f32; 4]> {
@@ -46,10 +38,10 @@ fn resolve_paint_color(s: &str, filament_colors: &[[f32; 4]]) -> Option<[f32; 4]
     }
 
     let idx = match s {
-        "4" => Some(0),
-        "8" => Some(1),
-        "0C" | "0" => Some(2),
-        "1C" => Some(3),
+        "4" => Some(0),        // Pupil (black, filament index 0)
+        "8" => Some(1),        // Body / Skin (brown, filament index 1)
+        "0C" | "0" => Some(2), // Eye / Sclera (white, filament index 2)
+        "1C" => Some(3),       // Ear (pink, filament index 3)
         _ => {
             let s_clean = s.trim_end_matches('C').trim_end_matches('c');
             if let Ok(val) = u32::from_str_radix(s_clean, 16) {
@@ -312,6 +304,9 @@ impl Loader for ThreemfLoader {
                                     global_positions.push(*p);
                                 }
 
+                                let all_obj_tris: Vec<[u32; 3]> = current_obj_tris.values().flatten().copied().collect();
+                                let obj_normals = compute_normals(&current_obj_positions, &all_obj_tris);
+
                                 for (color_key, sub_indices) in current_obj_tris.drain() {
                                     for tri in &sub_indices {
                                         global_indices.push([tri[0] + base_vertex, tri[1] + base_vertex, tri[2] + base_vertex]);
@@ -324,11 +319,31 @@ impl Loader for ThreemfLoader {
                                         c[3] as f32 / 255.0,
                                     ]);
 
+                                    let mut local_positions = Vec::with_capacity(sub_indices.len() * 3);
+                                    let mut local_normals = Vec::with_capacity(sub_indices.len() * 3);
+                                    let mut local_indices = Vec::with_capacity(sub_indices.len());
+                                    let mut v_map = HashMap::new();
+
+                                    for tri in &sub_indices {
+                                        let mut new_tri = [0u32; 3];
+                                        for (k, &v_idx) in tri.iter().enumerate() {
+                                            let new_idx = *v_map.entry(v_idx).or_insert_with(|| {
+                                                let idx = local_positions.len() as u32;
+                                                local_positions.push(current_obj_positions[v_idx as usize]);
+                                                local_normals.push(obj_normals[v_idx as usize]);
+                                                idx
+                                            });
+                                            new_tri[k] = new_idx;
+                                        }
+                                        local_indices.push(new_tri);
+                                    }
+
                                     submeshes.push(SubMesh {
-                                        positions: current_obj_positions.clone(),
-                                        normals: Vec::new(),
-                                        indices: sub_indices,
+                                        positions: local_positions,
+                                        normals: local_normals,
+                                        indices: local_indices,
                                         color,
+                                        ..Default::default()
                                     });
                                 }
                             }
@@ -344,11 +359,66 @@ impl Loader for ThreemfLoader {
             return Err("3mf: no geometry (vertices/triangles) found".into());
         }
 
+        let global_normals = compute_normals(&global_positions, &global_indices);
+
         Ok(MeshData {
             positions: global_positions,
-            normals: Vec::new(),
+            normals: global_normals,
             indices: global_indices,
             submeshes,
+            ..Default::default()
         })
     }
+}
+
+fn compute_normals(positions: &[[f32; 3]], indices: &[[u32; 3]]) -> Vec<[f32; 3]> {
+    let mut normals = vec![[0.0f32; 3]; positions.len()];
+    for tri in indices {
+        let i0 = tri[0] as usize;
+        let i1 = tri[1] as usize;
+        let i2 = tri[2] as usize;
+        if i0 < positions.len() && i1 < positions.len() && i2 < positions.len() {
+            let p0 = glam::Vec3::from(positions[i0]);
+            let p1 = glam::Vec3::from(positions[i1]);
+            let p2 = glam::Vec3::from(positions[i2]);
+
+            let v01 = p1 - p0;
+            let v02 = p2 - p0;
+            let v12 = p2 - p1;
+
+            let fnorm = v01.cross(v02);
+            let fn_len = fnorm.length();
+            if fn_len < 1e-6 {
+                continue;
+            }
+            let fn_norm = fnorm / fn_len;
+
+            let l01 = v01.length();
+            let l02 = v02.length();
+            let l12 = v12.length();
+
+            if l01 > 1e-6 && l02 > 1e-6 && l12 > 1e-6 {
+                let a0 = (v01.dot(v02) / (l01 * l02)).clamp(-1.0, 1.0).acos();
+                let a1 = ((-v01.dot(v12)) / (l01 * l12)).clamp(-1.0, 1.0).acos();
+                let a2 = ((-v02.dot(-v12)) / (l02 * l12)).clamp(-1.0, 1.0).acos();
+
+                let n0 = glam::Vec3::from(normals[i0]) + fn_norm * a0;
+                let n1 = glam::Vec3::from(normals[i1]) + fn_norm * a1;
+                let n2 = glam::Vec3::from(normals[i2]) + fn_norm * a2;
+
+                normals[i0] = n0.into();
+                normals[i1] = n1.into();
+                normals[i2] = n2.into();
+            }
+        }
+    }
+    for n in &mut normals {
+        let v = glam::Vec3::from(*n);
+        *n = if v.length_squared() > 1e-6 {
+            v.normalize().into()
+        } else {
+            [0.0, 0.0, 1.0]
+        };
+    }
+    normals
 }

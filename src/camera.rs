@@ -1,81 +1,66 @@
-use kiss3d::camera::{Camera3d, OrbitCamera3d};
-use kiss3d::event::{Action, MouseButton, WindowEvent};
-use kiss3d::glamx::{Mat4, Pose3, Vec3};
-use kiss3d::scene::SceneNode3d;
-use kiss3d::window::Canvas;
+use glam::{Mat4, Vec3};
+use std::time::Instant;
 
 pub struct FixedCenterCamera {
-    pub inner: OrbitCamera3d,
     pub center: Vec3,
+    pub dist: f32,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub min_dist: f32,
+    pub max_dist: f32,
     pub dist_step: f32,
-    pub object: Option<SceneNode3d>,
-    pub light_node: SceneNode3d,
-    pub last_cursor: Option<(f32, f32)>,
-    pub dragging: bool,
-    pub last_click: Option<std::time::Instant>,
-    pub loading: bool,
-    pub should_close: bool,
     pub smooth_orbit: bool,
     pub vel_yaw: f32,
     pub vel_pitch: f32,
-    pub pending_menu_pos: Option<(f32, f32)>,
+
+    pub loading: bool,
+    pub should_close: bool,
     pub menu_open: bool,
-    pub open_file_requested: bool,
-    pub dialog_open: bool,
-    pub last_dialog_close: Option<std::time::Instant>,
     pub about_open: bool,
+    pub dialog_open: bool,
+    pub last_dialog_close: Option<Instant>,
+    pub open_file_requested: bool,
+    pub pending_menu_pos: Option<(f32, f32)>,
 }
 
 impl FixedCenterCamera {
     pub fn new(
-        inner: OrbitCamera3d,
+        eye: Vec3,
         center: Vec3,
         dist_step: f32,
-        light_node: SceneNode3d,
+        min_dist: f32,
+        max_dist: f32,
         smooth_orbit: bool,
     ) -> Self {
+        let diff = eye - center;
+        let dist = diff.length().clamp(min_dist, max_dist);
+        let pitch = (diff.z / dist.max(1e-4)).clamp(-1.0, 1.0).acos().clamp(0.01, std::f32::consts::PI - 0.01);
+        let yaw = diff.y.atan2(diff.x);
+
         Self {
-            inner,
             center,
+            dist,
+            yaw,
+            pitch,
+            min_dist,
+            max_dist,
             dist_step,
-            object: None,
-            light_node,
-            last_cursor: None,
-            dragging: false,
-            last_click: None,
-            loading: false,
-            should_close: false,
             smooth_orbit,
             vel_yaw: 0.0,
             vel_pitch: 0.0,
-            pending_menu_pos: None,
+            loading: false,
+            should_close: false,
             menu_open: false,
-            open_file_requested: false,
+            about_open: false,
             dialog_open: false,
             last_dialog_close: None,
-            about_open: false,
+            open_file_requested: false,
+            pending_menu_pos: None,
         }
-    }
-
-    pub fn set_object(&mut self, obj: SceneNode3d) {
-        if let Some(mut old) = self.object.take() {
-            old.set_local_scale(0.0, 0.0, 0.0);
-            old.set_visible(false);
-        }
-        self.object = Some(obj);
-    }
-
-    pub fn object_mut(&mut self) -> Option<&mut SceneNode3d> {
-        self.object.as_mut()
     }
 
     pub fn set_loading(&mut self, v: bool) {
         self.loading = v;
-        if v {
-            if let Some(obj) = &mut self.object {
-                obj.set_local_scale(0.0, 0.0, 0.0);
-            }
-        }
     }
 
     pub fn is_loading(&self) -> bool {
@@ -87,37 +72,53 @@ impl FixedCenterCamera {
     }
 
     pub fn set_center(&mut self, new_center: Vec3) {
-        let delta = new_center - self.center;
         self.center = new_center;
-        let new_eye = self.inner.eye() + delta;
-        self.inner.look_at(new_eye, self.center);
-        self.inner.set_at(self.center);
     }
 
     pub fn reset_view(&mut self, eye: Vec3, center: Vec3) {
+        let diff = eye - center;
+        self.dist = diff.length().clamp(self.min_dist, self.max_dist);
         self.center = center;
-        self.inner.look_at(eye, center);
-        self.inner.set_at(center);
+        self.pitch = (diff.z / self.dist.max(1e-4)).clamp(-1.0, 1.0).acos().clamp(0.01, std::f32::consts::PI - 0.01);
+        self.yaw = diff.y.atan2(diff.x);
         self.vel_yaw = 0.0;
         self.vel_pitch = 0.0;
-        self.dragging = false;
-        self.last_cursor = None;
+    }
+
+    pub fn eye(&self) -> Vec3 {
+        let p = self.pitch.clamp(0.01, std::f32::consts::PI - 0.01);
+        let x = self.center.x + self.dist * p.sin() * self.yaw.cos();
+        let y = self.center.y + self.dist * p.sin() * self.yaw.sin();
+        let z = self.center.z + self.dist * p.cos();
+        Vec3::new(x, y, z)
+    }
+
+    pub fn view_matrix(&self) -> Mat4 {
+        Mat4::look_at_rh(self.eye(), self.center, Vec3::Z)
+    }
+
+    pub fn projection_matrix(&self, aspect: f32) -> Mat4 {
+        Mat4::perspective_rh(
+            std::f32::consts::FRAC_PI_4,
+            aspect.max(0.001),
+            0.01,
+            2000.0,
+        )
+    }
+
+    pub fn view_projection(&self, aspect: f32) -> Mat4 {
+        self.projection_matrix(aspect) * self.view_matrix()
     }
 
     pub fn orbit_vertical(&mut self, delta: f32) {
-        let new_pitch = (self.inner.pitch() + delta)
-            .clamp(0.01, std::f32::consts::PI - 0.01);
-        self.inner.set_pitch(new_pitch);
-        self.inner.set_at(self.center);
+        self.pitch = (self.pitch + delta).clamp(0.01, std::f32::consts::PI - 0.01);
         if self.smooth_orbit {
             self.vel_pitch = delta * 0.3;
         }
     }
 
     pub fn orbit_horizontal(&mut self, delta: f32) {
-        let new_yaw = self.inner.yaw() + delta;
-        self.inner.set_yaw(new_yaw);
-        self.inner.set_at(self.center);
+        self.yaw += delta;
         if self.smooth_orbit {
             self.vel_yaw = delta * 0.3;
         }
@@ -128,203 +129,24 @@ impl FixedCenterCamera {
         if factor > 1.0 {
             factor = 1.0 / factor;
         }
-        let new_dist = if zoom_in {
-            self.inner.dist() * factor
+        self.dist = if zoom_in {
+            self.dist * factor
         } else {
-            self.inner.dist() / factor
+            self.dist / factor
         }
-        .clamp(self.inner.min_dist(), self.inner.max_dist());
-
-        self.inner.set_dist(new_dist);
-        self.inner.set_at(self.center);
-    }
-}
-
-
-impl Camera3d for FixedCenterCamera {
-    fn clip_planes(&self) -> (f32, f32) {
-        self.inner.clip_planes()
+        .clamp(self.min_dist, self.max_dist);
     }
 
-    fn view_transform(&self) -> Pose3 {
-        self.inner.view_transform()
+    pub fn zoom_delta(&mut self, scroll_delta: f32) {
+        let factor = 1.08f32.powf(scroll_delta);
+        self.dist = (self.dist / factor).clamp(self.min_dist, self.max_dist);
     }
 
-    fn eye(&self) -> Vec3 {
-        self.inner.eye()
-    }
-
-    fn handle_event(&mut self, canvas: &Canvas, event: &WindowEvent) {
-        use kiss3d::event::Key;
-
-        match event {
-            WindowEvent::Scroll(_, off, _) => {
-                let offf = *off as f32;
-                let new_dist = (self.inner.dist() * self.dist_step.powf(offf))
-                    .clamp(self.inner.min_dist(), self.inner.max_dist());
-                self.inner.set_dist(new_dist);
-                self.inner.set_at(self.center);
-            }
-            WindowEvent::FramebufferSize(_w, _h) => {
-                self.inner.handle_event(canvas, event);
-            }
-            WindowEvent::CursorPos(x, y, _) => {
-                let x = *x as f32;
-                let y = *y as f32;
-                if self.dragging {
-                    if let Some((lx, ly)) = self.last_cursor {
-                        let dx = x - lx;
-                        let dy = y - ly;
-
-                        let new_yaw = self.inner.yaw() + dx * 0.01;
-                        let new_pitch = (self.inner.pitch() - dy * 0.01)
-                            .clamp(0.01, std::f32::consts::PI - 0.01);
-                        self.inner.set_yaw(new_yaw);
-                        self.inner.set_pitch(new_pitch);
-                        self.inner.set_at(self.center);
-
-                        if self.smooth_orbit {
-                            self.vel_yaw = self.vel_yaw * 0.4 + dx * 0.006;
-                            self.vel_pitch = self.vel_pitch * 0.4 - dy * 0.006;
-                        }
-                    }
-                    self.last_cursor = Some((x, y));
-                } else {
-                    self.last_cursor = Some((x, y));
-                }
-            }
-            WindowEvent::MouseButton(btn, act, _) => {
-                if *btn == MouseButton::Button1 {
-                    if *act == Action::Press {
-                        if self.menu_open {
-                            self.menu_open = false;
-                            return;
-                        }
-                        self.vel_yaw = 0.0;
-                        self.vel_pitch = 0.0;
-                        let now = std::time::Instant::now();
-                        let mut double = false;
-                        if let Some(last) = self.last_click {
-                            if now.duration_since(last) <= std::time::Duration::from_millis(300) {
-                                double = true;
-                            }
-                        }
-
-                        if double {
-                            self.last_click = None;
-                            self.open_file_requested = true;
-                        } else {
-                            self.last_click = Some(now);
-                            self.dragging = true;
-                        }
-                    } else {
-                        self.dragging = false;
-                        if !self.dragging {
-                            self.last_cursor = None;
-                        }
-                    }
-                } else if *btn == MouseButton::Button2 && *act == Action::Press {
-                    if let Some((x, y)) = self.last_cursor {
-                        let scale = canvas.scale_factor() as f32;
-                        self.pending_menu_pos = Some((x / scale, y / scale));
-                    }
-                }
-            }
-            WindowEvent::Key(k, act, _) => {
-                if *act == Action::Press {
-                    match k {
-                        Key::Escape => {
-                            if self.about_open {
-                                self.about_open = false;
-                            } else if self.menu_open {
-                                self.menu_open = false;
-                            } else if self.dialog_open {
-                            } else if let Some(last_close) = self.last_dialog_close {
-                                if last_close.elapsed() < std::time::Duration::from_millis(500) {
-                                    self.last_dialog_close = None;
-                                } else {
-                                    self.should_close = true;
-                                }
-                            } else {
-                                self.should_close = true;
-                            }
-                        }
-                        Key::Up => {
-                            if !self.menu_open {
-                                self.orbit_vertical(-0.05);
-                            }
-                        }
-                        Key::Down => {
-                            if !self.menu_open {
-                                self.orbit_vertical(0.05);
-                            }
-                        }
-                        Key::Left => {
-                            if !self.menu_open {
-                                self.orbit_horizontal(0.05);
-                            }
-                        }
-                        Key::Right => {
-                            if !self.menu_open {
-                                self.orbit_horizontal(-0.05);
-                            }
-                        }
-                        Key::Add | Key::Equals | Key::NumpadEquals => {
-                            if !self.menu_open {
-                                self.zoom(true);
-                            }
-                        }
-                        Key::Subtract | Key::Minus => {
-                            if !self.menu_open {
-                                self.zoom(false);
-                            }
-                        }
-                        _ => {
-                            self.inner.handle_event(canvas, event);
-                        }
-                    }
-                } else {
-                    self.inner.handle_event(canvas, event);
-                }
-            }
-            _ => {
-                self.inner.handle_event(canvas, event);
-            }
-        }
-    }
-
-    fn view_transform_pair(&self, pass: usize) -> (Pose3, Mat4) {
-        self.inner.view_transform_pair(pass)
-    }
-
-    fn render_layers(&self) -> u32 {
-        self.inner.render_layers()
-    }
-
-    fn transformation(&self) -> Mat4 {
-        self.inner.transformation()
-    }
-
-    fn inverse_transformation(&self) -> Mat4 {
-        self.inner.inverse_transformation()
-    }
-
-    fn update(&mut self, canvas: &Canvas) {
+    pub fn update(&mut self) {
         if self.smooth_orbit {
-            if self.dragging {
-                self.vel_yaw *= 0.85;
-                self.vel_pitch *= 0.85;
-            } else if self.vel_yaw.abs() > 1e-5 || self.vel_pitch.abs() > 1e-5 {
-                let new_yaw = self.inner.yaw() + self.vel_yaw;
-                let unconstrained_pitch = self.inner.pitch() + self.vel_pitch;
-                let new_pitch = unconstrained_pitch.clamp(0.01, std::f32::consts::PI - 0.01);
-                if (unconstrained_pitch - new_pitch).abs() > 1e-5 {
-                    self.vel_pitch = 0.0;
-                }
-                self.inner.set_yaw(new_yaw);
-                self.inner.set_pitch(new_pitch);
-                self.inner.set_at(self.center);
-
+            if self.vel_yaw.abs() > 1e-5 || self.vel_pitch.abs() > 1e-5 {
+                self.yaw += self.vel_yaw;
+                self.pitch = (self.pitch + self.vel_pitch).clamp(0.01, std::f32::consts::PI - 0.01);
                 self.vel_yaw *= 0.92;
                 self.vel_pitch *= 0.92;
             } else {
@@ -332,9 +154,5 @@ impl Camera3d for FixedCenterCamera {
                 self.vel_pitch = 0.0;
             }
         }
-        self.inner.update(canvas);
-        let eye = self.inner.eye();
-        self.inner.look_at(eye, self.center);
-        self.light_node.set_position(eye);
     }
 }

@@ -57,8 +57,15 @@ impl Loader for StlLoader {
                     normals: sub_normals,
                     indices: sub_indices,
                     color: None,
+                    ..Default::default()
                 };
-                Ok(MeshData { positions, normals: Vec::new(), indices, submeshes: vec![submesh] })
+                Ok(MeshData {
+                    positions,
+                    normals: Vec::new(),
+                    indices,
+                    submeshes: vec![submesh],
+                    ..Default::default()
+                })
             }
             Err(e) => Err(format!("stl parse error: {}", e)),
         }

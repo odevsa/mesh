@@ -1,23 +1,18 @@
 use crate::camera::FixedCenterCamera;
 use crate::config::Config;
 use crate::dialog;
-use crate::loader::{LoaderRegistry, MeshData};
-use crate::scene::{axes, grid, model};
+use crate::loader::{self, LoaderRegistry, MeshData};
+use crate::render::{SceneRenderer, Uniforms};
+use crate::scene::model;
 use crate::ui::menu::{render_context_menu, UiResponse};
 use crate::ui::overlay;
-use kiss3d::camera::OrbitCamera3d;
-use kiss3d::color::Color;
-use kiss3d::glamx::Vec3;
-use kiss3d::scene::SceneNode3d;
-use kiss3d::window::Window;
+use glam::Vec3;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 
 pub struct App {
-    window: Window,
-    scene_root: SceneNode3d,
-    grid_node: Option<SceneNode3d>,
-    axes_node: Option<SceneNode3d>,
+    renderer: Option<SceneRenderer>,
+    wgpu_render_state: Option<egui_wgpu::RenderState>,
     camera: FixedCenterCamera,
     cfg: Config,
     rx: Receiver<Result<MeshData, String>>,
@@ -31,69 +26,41 @@ pub struct App {
     current_mesh_data: Option<MeshData>,
     current_model_stats: Option<overlay::ModelStats>,
     show_about: bool,
-    fonts_initialized: bool,
 }
 
 impl App {
     pub fn new(
+        cc: &eframe::CreationContext,
         rx: Receiver<Result<MeshData, String>>,
         tx: Sender<Result<MeshData, String>>,
         registry: Arc<LoaderRegistry>,
         cfg: Config,
         initial_loading: bool,
     ) -> Self {
-        let setup = kiss3d::window::CanvasSetup {
-            vsync: true,
-            samples: kiss3d::window::NumSamples::One,
-            ..Default::default()
-        };
-        let mut window = if initial_loading {
-            pollster::block_on(Window::new_with_setup("Mesh - Loading...", 800, 600, setup.clone()))
-        } else {
-            pollster::block_on(Window::new_with_setup("Mesh", 800, 600, setup))
-        };
+        crate::i18n::setup_cjk_fonts(&cc.egui_ctx);
 
-        window.set_background_color(Color::new(
-            cfg.background[0] as f32 / 255.0,
-            cfg.background[1] as f32 / 255.0,
-            cfg.background[2] as f32 / 255.0,
-            1.0,
-        ));
-
-        let mut scene_root = SceneNode3d::empty();
-
-        let grid_node = if cfg.show_grid {
-            let grid_color = Color::new(
+        let wgpu_render_state = cc.wgpu_render_state.clone();
+        let renderer = if let Some(ref state) = wgpu_render_state {
+            let mut r = SceneRenderer::new(state.device.clone(), state.queue.clone());
+            let grid_color = [
                 cfg.grid_color[0] as f32 / 255.0,
                 cfg.grid_color[1] as f32 / 255.0,
                 cfg.grid_color[2] as f32 / 255.0,
                 1.0,
+            ];
+            r.update_grid(cfg.grid_size, cfg.grid_divisions, grid_color, cfg.show_axes);
+            r.update_axes(cfg.grid_size, cfg.show_axes, cfg.show_axis_direction);
+
+            let initial_z_offset = model::compute_model_z_offset(
+                cfg.model_position,
+                0.5,
+                cfg.object_scale,
             );
-            Some(grid::build_grid(
-                &mut scene_root,
-                cfg.grid_size,
-                cfg.grid_divisions,
-                grid_color,
-                cfg.show_axes,
-            ))
+            r.update_dummy_box(cfg.object_scale, initial_z_offset);
+            Some(r)
         } else {
             None
         };
-
-        let axes_node = Some(axes::build_axes(
-            &mut scene_root,
-            cfg.grid_size,
-            cfg.show_axes,
-            cfg.show_axis_direction,
-        ));
-
-        let scaled_light_radius = cfg.object_scale * 5.0;
-        let node_color = Color::new(
-            cfg.object_color[0] as f32 / 255.0,
-            cfg.object_color[1] as f32 / 255.0,
-            cfg.object_color[2] as f32 / 255.0,
-            1.0,
-        );
 
         let base_scale_factor = 1.0;
         let current_model_size = Vec3::new(0.5, 0.5, 0.5);
@@ -104,49 +71,23 @@ impl App {
             cfg.object_scale * base_scale_factor,
         );
         let center = Vec3::new(0.0, 0.0, initial_z_offset);
-
-        let mut placeholder = scene_root.add_cube(0.5, 0.5, 0.5);
-        placeholder.set_color(node_color);
-        placeholder.set_position(center);
-
         let eye = center + Vec3::new(cfg.camera_eye[0], cfg.camera_eye[1], cfg.camera_eye[2]);
-        let mut base_camera = OrbitCamera3d::new(eye, center);
-        base_camera.rebind_drag_button(None);
-        base_camera.rebind_reset_key(None);
-        base_camera.set_min_dist(cfg.scroll_min);
-        base_camera.set_max_dist(cfg.scroll_max);
-        base_camera.set_up_axis(Vec3::new(0.0, 0.0, 1.0));
-
-        let light_node = {
-            let light = kiss3d::light::Light::point(scaled_light_radius * 2.0);
-            scene_root.add_light(light)
-        };
 
         let dist_step_value = 1.0 + (cfg.scroll_speed * if cfg.invert_scroll { 1.0 } else { -1.0 });
-        base_camera.set_dist_step(dist_step_value);
 
         let mut camera = FixedCenterCamera::new(
-            base_camera,
+            eye,
             center,
             dist_step_value,
-            light_node,
+            cfg.scroll_min,
+            cfg.scroll_max,
             cfg.smooth_orbit,
         );
-
-        if initial_loading {
-            placeholder.set_local_scale(0.0, 0.0, 0.0);
-        }
-        if !cfg.show_dummy_box {
-            placeholder.set_visible(false);
-        }
-        camera.set_object(placeholder);
         camera.set_loading(initial_loading);
 
         Self {
-            window,
-            scene_root,
-            grid_node,
-            axes_node,
+            renderer,
+            wgpu_render_state,
             camera,
             cfg,
             rx,
@@ -154,66 +95,12 @@ impl App {
             registry,
             base_scale_factor,
             current_model_size,
-            last_was_loading: false,
+            last_was_loading: initial_loading,
             menu_pos: egui::pos2(120.0, 120.0),
             has_model: false,
             current_mesh_data: None,
             current_model_stats: None,
             show_about: false,
-            fonts_initialized: false,
-        }
-    }
-
-    pub fn run(mut self) {
-        while pollster::block_on(self.window.render_3d(&mut self.scene_root, &mut self.camera)) {
-            if self.camera.should_close {
-                break;
-            }
-
-            self.update_window_title();
-            self.update_menu_position();
-            self.handle_camera_requests();
-
-            let ui_resp = self.render_ui();
-            self.apply_ui_response(ui_resp);
-
-            if self.camera.should_close {
-                break;
-            }
-
-            self.process_incoming_meshes();
-        }
-        if let Err(e) = self.cfg.save() {
-            eprintln!("Failed to save config: {}", e);
-        }
-        self.window.hide();
-        drop(self);
-    }
-
-    fn update_window_title(&mut self) {
-        let now_loading = self.camera.is_loading();
-        if now_loading != self.last_was_loading {
-            let lang = self.cfg.language;
-            if now_loading {
-                self.window.set_title(lang.t(crate::i18n::TextKey::WindowLoadingTitle));
-            } else {
-                self.window.set_title(lang.t(crate::i18n::TextKey::WindowTitle));
-            }
-            self.last_was_loading = now_loading;
-        }
-    }
-
-    fn update_menu_position(&mut self) {
-        if let Some((mx, my)) = self.camera.pending_menu_pos.take() {
-            self.menu_pos = egui::pos2(mx, my);
-            self.camera.menu_open = true;
-        }
-    }
-
-    fn handle_camera_requests(&mut self) {
-        if self.camera.open_file_requested {
-            self.camera.open_file_requested = false;
-            self.trigger_file_dialog();
         }
     }
 
@@ -224,14 +111,143 @@ impl App {
         self.camera.last_dialog_close = Some(std::time::Instant::now());
 
         if picked {
-            if let Some(obj) = self.camera.object_mut() {
-                obj.set_local_scale(0.0, 0.0, 0.0);
-            }
             self.camera.set_loading(true);
         }
     }
 
-    fn render_ui(&mut self) -> UiResponse {
+    fn unload_model(&mut self) {
+        self.has_model = false;
+        self.current_mesh_data = None;
+        self.current_model_stats = None;
+        self.base_scale_factor = 1.0;
+        self.current_model_size = Vec3::new(0.5, 0.5, 0.5);
+
+        if let Some(ref mut r) = self.renderer {
+            r.clear_mesh();
+            let actual_scale = self.cfg.object_scale * self.base_scale_factor;
+            let z_offset = model::compute_model_z_offset(
+                self.cfg.model_position,
+                self.current_model_size.z,
+                actual_scale,
+            );
+            r.update_dummy_box(actual_scale, z_offset);
+            self.camera.set_center(Vec3::new(0.0, 0.0, z_offset));
+        }
+    }
+
+    fn reset_camera(&mut self) {
+        let eye_offset = Vec3::new(
+            self.cfg.camera_eye[0],
+            self.cfg.camera_eye[1],
+            self.cfg.camera_eye[2],
+        );
+        let current_center = self.camera.center();
+        self.camera.reset_view(current_center + eye_offset, current_center);
+    }
+
+    fn reset_defaults(&mut self) {
+        self.cfg = Config::default();
+        let _ = self.cfg.save();
+        self.rebuild_grid_and_axes();
+        self.apply_controls_settings();
+        self.update_model_transform();
+    }
+
+    fn update_model_transform(&mut self) {
+        let actual_scale = self.cfg.object_scale * self.base_scale_factor;
+        let z_offset = model::compute_model_z_offset(
+            self.cfg.model_position,
+            self.current_model_size.z,
+            actual_scale,
+        );
+        let new_center = Vec3::new(0.0, 0.0, z_offset);
+        self.camera.set_center(new_center);
+
+        if self.has_model {
+            if let (Some(mesh), Some(r)) = (&self.current_mesh_data, &mut self.renderer) {
+                let (min, max) = model::compute_bounds(&mesh.positions);
+                let center_offset = (min + max) / 2.0;
+                r.upload_mesh(mesh, actual_scale, center_offset, new_center);
+            }
+        } else if let Some(ref mut r) = self.renderer {
+            r.update_dummy_box(actual_scale, z_offset);
+        }
+    }
+
+    fn rebuild_grid_and_axes(&mut self) {
+        if let Some(ref mut r) = self.renderer {
+            let grid_color = [
+                self.cfg.grid_color[0] as f32 / 255.0,
+                self.cfg.grid_color[1] as f32 / 255.0,
+                self.cfg.grid_color[2] as f32 / 255.0,
+                1.0,
+            ];
+            r.update_grid(
+                self.cfg.grid_size,
+                self.cfg.grid_divisions,
+                grid_color,
+                self.cfg.show_axes,
+            );
+            r.update_axes(
+                self.cfg.grid_size,
+                self.cfg.show_axes,
+                self.cfg.show_axis_direction,
+            );
+        }
+    }
+
+    fn apply_controls_settings(&mut self) {
+        self.camera.smooth_orbit = self.cfg.smooth_orbit;
+        let dist_step_value = 1.0
+            + (self.cfg.scroll_speed * if self.cfg.invert_scroll { 1.0 } else { -1.0 });
+        self.camera.dist_step = dist_step_value;
+    }
+
+    fn rebuild_model_node(&mut self) {
+        let Some(ref mesh) = self.current_mesh_data else { return };
+
+        let (min, max) = model::compute_bounds(&mesh.positions);
+        let center_offset = (min + max) / 2.0;
+
+        let size = (max - min).abs();
+        self.current_model_size = size;
+        let max_dim = size.x.max(size.y).max(size.z).max(1e-6);
+        self.base_scale_factor = 1.0 / max_dim;
+        let scale_factor = self.cfg.object_scale * self.base_scale_factor;
+
+        let z_offset = model::compute_model_z_offset(
+            self.cfg.model_position,
+            self.current_model_size.z,
+            scale_factor,
+        );
+        let model_center = Vec3::new(0.0, 0.0, z_offset);
+
+        if let Some(ref mut r) = self.renderer {
+            r.upload_mesh(mesh, scale_factor, center_offset, model_center);
+        }
+
+        self.camera.set_center(model_center);
+        self.has_model = true;
+    }
+
+    fn process_incoming_meshes(&mut self) {
+        match self.rx.try_recv() {
+            Ok(Ok(mesh)) => {
+                self.current_model_stats = Some(compute_stats(&mesh));
+                self.current_mesh_data = Some(mesh);
+                self.rebuild_model_node();
+                self.camera.set_loading(false);
+            }
+            Ok(Err(err)) => {
+                eprintln!("{}", err);
+                self.camera.set_loading(false);
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {}
+        }
+    }
+
+    fn render_ui(&mut self, ctx: &egui::Context) -> UiResponse {
         let mut ui_resp = UiResponse::default();
         let menu_open = self.camera.menu_open;
         let menu_pos = self.menu_pos;
@@ -242,37 +258,34 @@ impl App {
 
         self.show_about = self.camera.about_open;
 
-        self.window.draw_ui(|ctx| {
-            if !self.fonts_initialized {
-                crate::i18n::setup_cjk_fonts(ctx);
-                self.fonts_initialized = true;
-            }
+        if is_loading {
+            overlay::render_loading_overlay(ctx, lang);
+        } else if !has_model && overlay::render_empty_overlay(ctx, lang) {
+            ui_resp.open_file_dialog = true;
+            ui_resp.close_menu_requested = true;
+        }
 
-            if is_loading {
-                overlay::render_loading_overlay(ctx, lang);
-            } else if !has_model && overlay::render_empty_overlay(ctx, lang) {
-                ui_resp.open_file_dialog = true;
-                ui_resp.close_menu_requested = true;
-            }
+        if cfg.show_dimensions && has_model && !is_loading {
+            overlay::render_details_overlay(
+                ctx,
+                lang,
+                self.current_model_size,
+                self.current_model_stats,
+            );
+        }
 
-            if cfg.show_dimensions && has_model && !is_loading {
-                overlay::render_details_overlay(ctx, lang, self.current_model_size, self.current_model_stats);
-            }
+        if menu_open {
+            let menu_resp = render_context_menu(ctx, menu_pos, cfg, has_model);
+            let open_dialog = ui_resp.open_file_dialog || menu_resp.open_file_dialog;
+            let close_menu = ui_resp.close_menu_requested || menu_resp.close_menu_requested;
+            let open_about = ui_resp.open_about_requested || menu_resp.open_about_requested;
+            ui_resp = menu_resp;
+            ui_resp.open_file_dialog = open_dialog;
+            ui_resp.close_menu_requested = close_menu;
+            ui_resp.open_about_requested = open_about;
+        }
 
-            if menu_open {
-                let menu_resp = render_context_menu(ctx, menu_pos, cfg, has_model);
-                let open_dialog = ui_resp.open_file_dialog || menu_resp.open_file_dialog;
-                let close_menu = ui_resp.close_menu_requested || menu_resp.close_menu_requested;
-                let open_about = ui_resp.open_about_requested || menu_resp.open_about_requested;
-                ui_resp = menu_resp;
-                ui_resp.open_file_dialog = open_dialog;
-                ui_resp.close_menu_requested = close_menu;
-                ui_resp.open_about_requested = open_about;
-            }
-
-            overlay::render_about_dialog(ctx, &mut self.show_about, cfg.language);
-        });
-
+        overlay::render_about_dialog(ctx, &mut self.show_about, cfg.language);
         self.camera.about_open = self.show_about;
 
         if ui_resp.close_menu_requested {
@@ -314,20 +327,8 @@ impl App {
             }
         }
 
-        if resp.bg_changed {
-            self.apply_background_color();
-        }
-
-        if resp.obj_color_changed || resp.materials_changed {
-            if self.has_model {
-                self.rebuild_model_node();
-            } else {
-                self.apply_object_color();
-            }
-        }
-
-        if resp.scale_changed || resp.position_changed {
-            self.update_model_transform(resp.scale_changed);
+        if resp.scale_changed || resp.position_changed || resp.dummy_box_changed {
+            self.update_model_transform();
         }
 
         if resp.grid_rebuild || resp.axes_rebuild {
@@ -337,281 +338,226 @@ impl App {
         if resp.controls_changed {
             self.apply_controls_settings();
         }
+    }
+}
 
-        if resp.dummy_box_changed && !self.has_model {
-            let is_loading = self.camera.is_loading();
-            if let Some(obj) = self.camera.object_mut() {
-                if self.cfg.show_dummy_box {
-                    let actual_scale = self.cfg.object_scale * self.base_scale_factor;
-                    obj.set_local_scale(actual_scale, actual_scale, actual_scale);
-                    obj.set_visible(!is_loading);
-                } else {
-                    obj.set_visible(false);
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+
+        if self.camera.should_close {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        let now_loading = self.camera.is_loading();
+        if now_loading != self.last_was_loading {
+            let lang = self.cfg.language;
+            let title = if now_loading {
+                lang.t(crate::i18n::TextKey::WindowLoadingTitle).to_string()
+            } else {
+                lang.t(crate::i18n::TextKey::WindowTitle).to_string()
+            };
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+            self.last_was_loading = now_loading;
+        }
+
+        // Handle Drag & Drop of supported 3D models natively via eframe
+        let mut dropped_path = None;
+        ctx.input(|i| {
+            for file in &i.raw.dropped_files {
+                if let Some(ref path) = file.path {
+                    if loader::is_supported_file(path) {
+                        dropped_path = Some(path.clone());
+                        break;
+                    }
                 }
             }
-        }
-    }
+        });
 
-    fn unload_model(&mut self) {
-        self.has_model = false;
-        self.current_mesh_data = None;
-        self.current_model_stats = None;
-        self.base_scale_factor = 1.0;
-        self.current_model_size = Vec3::new(0.5, 0.5, 0.5);
-
-        let actual_scale = self.cfg.object_scale * self.base_scale_factor;
-        let z_offset = model::compute_model_z_offset(
-            self.cfg.model_position,
-            self.current_model_size.z,
-            actual_scale,
-        );
-        let center = Vec3::new(0.0, 0.0, z_offset);
-
-        let node_color = Color::new(
-            self.cfg.object_color[0] as f32 / 255.0,
-            self.cfg.object_color[1] as f32 / 255.0,
-            self.cfg.object_color[2] as f32 / 255.0,
-            1.0,
-        );
-
-        let mut placeholder = self.scene_root.add_cube(0.5, 0.5, 0.5);
-        placeholder.set_color(node_color);
-        placeholder.set_position(center);
-        placeholder.set_local_scale(actual_scale, actual_scale, actual_scale);
-        if !self.cfg.show_dummy_box {
-            placeholder.set_visible(false);
+        if let Some(path) = dropped_path {
+            self.camera.set_loading(true);
+            dialog::load_file_async(&path, self.registry.clone(), self.tx.clone());
         }
 
-        self.camera.set_object(placeholder);
-        self.camera.set_center(center);
-        self.window.set_title("Mesh");
-    }
+        // Camera updates & animation repaint
+        self.camera.update();
+        if self.camera.smooth_orbit
+            && (self.camera.vel_yaw.abs() > 1e-5 || self.camera.vel_pitch.abs() > 1e-5)
+        {
+            ctx.request_repaint();
+        }
+        if self.camera.is_loading() {
+            ctx.request_repaint();
+        }
 
-    fn reset_camera(&mut self) {
-        let eye_offset = Vec3::new(
-            self.cfg.camera_eye[0],
-            self.cfg.camera_eye[1],
-            self.cfg.camera_eye[2],
-        );
-        let current_center = self.camera.center();
-        self.camera.reset_view(current_center + eye_offset, current_center);
-    }
+        // Check pending requests from camera
+        if let Some((mx, my)) = self.camera.pending_menu_pos.take() {
+            self.menu_pos = egui::pos2(mx, my);
+            self.camera.menu_open = true;
+        }
+        if self.camera.open_file_requested {
+            self.camera.open_file_requested = false;
+            self.trigger_file_dialog();
+        }
 
-    fn reset_defaults(&mut self) {
-        self.cfg = Config::default();
-        let _ = self.cfg.save();
-        self.apply_background_color();
-        self.apply_object_color();
-        self.update_model_transform(true);
-        self.rebuild_grid_and_axes();
-        self.apply_controls_settings();
-        if !self.has_model {
-            let is_loading = self.camera.is_loading();
-            if let Some(obj) = self.camera.object_mut() {
-                if self.cfg.show_dummy_box {
-                    let actual_scale = self.cfg.object_scale * self.base_scale_factor;
-                    obj.set_local_scale(actual_scale, actual_scale, actual_scale);
-                    obj.set_visible(!is_loading);
-                } else {
-                    obj.set_visible(false);
+        // Process incoming loaded meshes
+        self.process_incoming_meshes();
+
+        // 3D Viewport in CentralPanel
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE)
+            .show_inside(ui, |ui| {
+                let available_size = ui.available_size();
+                let (rect, response) =
+                    ui.allocate_exact_size(available_size, egui::Sense::click_and_drag());
+
+                // Mouse interaction for camera orbit
+                if response.dragged_by(egui::PointerButton::Primary) {
+                    let delta = response.drag_delta();
+                    self.camera.orbit_horizontal(-delta.x * 0.01);
+                    self.camera.orbit_vertical(-delta.y * 0.01);
                 }
-            }
-        }
-    }
 
-    fn apply_background_color(&mut self) {
-        self.window.set_background_color(Color::new(
-            self.cfg.background[0] as f32 / 255.0,
-            self.cfg.background[1] as f32 / 255.0,
-            self.cfg.background[2] as f32 / 255.0,
-            1.0,
-        ));
-    }
-
-    fn apply_object_color(&mut self) {
-        let c = Color::new(
-            self.cfg.object_color[0] as f32 / 255.0,
-            self.cfg.object_color[1] as f32 / 255.0,
-            self.cfg.object_color[2] as f32 / 255.0,
-            1.0,
-        );
-        if let Some(obj) = self.camera.object_mut() {
-            obj.set_color(c);
-        }
-    }
-
-    fn update_model_transform(&mut self, scale_changed: bool) {
-        let actual_scale = self.cfg.object_scale * self.base_scale_factor;
-        let z_offset = model::compute_model_z_offset(
-            self.cfg.model_position,
-            self.current_model_size.z,
-            actual_scale,
-        );
-        let new_center = Vec3::new(0.0, 0.0, z_offset);
-        if let Some(obj) = self.camera.object_mut() {
-            if scale_changed {
-                obj.set_local_scale(actual_scale, actual_scale, actual_scale);
-            }
-            obj.set_position(new_center);
-        }
-        self.camera.set_center(new_center);
-    }
-
-    fn rebuild_grid_and_axes(&mut self) {
-        if let Some(mut old) = self.grid_node.take() {
-            old.set_visible(false);
-        }
-        if let Some(mut old) = self.axes_node.take() {
-            old.set_visible(false);
-        }
-
-        if self.cfg.show_grid {
-            let grid_color = Color::new(
-                self.cfg.grid_color[0] as f32 / 255.0,
-                self.cfg.grid_color[1] as f32 / 255.0,
-                self.cfg.grid_color[2] as f32 / 255.0,
-                1.0,
-            );
-            self.grid_node = Some(grid::build_grid(
-                &mut self.scene_root,
-                self.cfg.grid_size,
-                self.cfg.grid_divisions,
-                grid_color,
-                self.cfg.show_axes,
-            ));
-        }
-
-        self.axes_node = Some(axes::build_axes(
-            &mut self.scene_root,
-            self.cfg.grid_size,
-            self.cfg.show_axes,
-            self.cfg.show_axis_direction,
-        ));
-    }
-
-    fn apply_controls_settings(&mut self) {
-        self.camera.smooth_orbit = self.cfg.smooth_orbit;
-        let dist_step_value = 1.0
-            + (self.cfg.scroll_speed * if self.cfg.invert_scroll { 1.0 } else { -1.0 });
-        self.camera.dist_step = dist_step_value;
-        self.camera.inner.set_dist_step(dist_step_value);
-    }
-
-    fn rebuild_model_node(&mut self) {
-        let Some(ref mesh) = self.current_mesh_data else { return };
-
-        let (min, max) = model::compute_bounds(&mesh.positions);
-        let center_offset = (min + max) / 2.0;
-
-        let size = (max - min).abs();
-        self.current_model_size = size;
-        let max_dim = size.x.max(size.y).max(size.z).max(1e-6);
-        self.base_scale_factor = 1.0 / max_dim;
-        let scale_factor = self.cfg.object_scale * self.base_scale_factor;
-
-        let z_offset = model::compute_model_z_offset(
-            self.cfg.model_position,
-            self.current_model_size.z,
-            scale_factor,
-        );
-        let model_center = Vec3::new(0.0, 0.0, z_offset);
-
-        let default_color = Color::new(
-            self.cfg.object_color[0] as f32 / 255.0,
-            self.cfg.object_color[1] as f32 / 255.0,
-            self.cfg.object_color[2] as f32 / 255.0,
-            1.0,
-        );
-
-        let mut group_node = self.scene_root.add_group();
-
-        if mesh.submeshes.is_empty() {
-            let verts_glam = model::center_vertices(&mesh.positions, center_offset);
-            let mut child = group_node.add_trimesh(verts_glam, mesh.indices.clone(), Vec3::new(1.0, 1.0, 1.0), false);
-            match self.cfg.material_mode {
-                crate::config::MaterialMode::Material | crate::config::MaterialMode::Solid => {
-                    child.set_surface_rendering_activation(true);
-                    child.set_lines_width(0.0, false);
-                    child.set_color(default_color);
+                // Double-click to open file dialog
+                if response.double_clicked_by(egui::PointerButton::Primary) {
+                    self.trigger_file_dialog();
                 }
-                crate::config::MaterialMode::Wireframe => {
-                    child.set_surface_rendering_activation(false);
-                    child.set_lines_color(Some(default_color));
-                    child.set_lines_width(1.0, false);
-                }
-            }
-        } else {
-            for sub in &mesh.submeshes {
-                if sub.positions.is_empty() || sub.indices.is_empty() {
-                    continue;
-                }
-                let sub_verts = model::center_vertices(&sub.positions, center_offset);
-                let mut child = group_node.add_trimesh(sub_verts, sub.indices.clone(), Vec3::new(1.0, 1.0, 1.0), false);
 
-                match self.cfg.material_mode {
-                    crate::config::MaterialMode::Material => {
-                        child.set_surface_rendering_activation(true);
-                        child.set_lines_width(0.0, false);
-                        if let Some(col) = sub.color {
-                            child.set_color(Color::new(col[0], col[1], col[2], col[3]));
-                        } else {
-                            child.set_color(default_color);
+                // Right click opens context menu
+                if response.secondary_clicked() {
+                    if let Some(pos) = response.interact_pointer_pos() {
+                        self.menu_pos = pos;
+                        self.camera.menu_open = true;
+                    }
+                } else if response.clicked() && self.camera.menu_open {
+                    self.camera.menu_open = false;
+                }
+
+                // Scroll wheel for camera zoom
+                let mut scroll_y = 0.0;
+                ctx.input(|i| {
+                    for event in &i.raw.events {
+                        if let egui::Event::MouseWheel { delta, .. } = event {
+                            scroll_y += delta.y;
                         }
                     }
-                    crate::config::MaterialMode::Solid => {
-                        child.set_surface_rendering_activation(true);
-                        child.set_lines_width(0.0, false);
-                        child.set_color(default_color);
+                    if scroll_y == 0.0 && i.smooth_scroll_delta.y != 0.0 {
+                        scroll_y = i.smooth_scroll_delta.y / 20.0;
                     }
-                    crate::config::MaterialMode::Wireframe => {
-                        child.set_surface_rendering_activation(false);
-                        let line_col = if let Some(col) = sub.color {
-                            Color::new(col[0], col[1], col[2], col[3])
+                });
+
+                if scroll_y.abs() > 1e-4 {
+                    let hover_in_rect = ctx
+                        .input(|i| i.pointer.hover_pos())
+                        .map(|p| rect.contains(p))
+                        .unwrap_or(false);
+                    if hover_in_rect {
+                        let sign = if self.cfg.invert_scroll { -1.0 } else { 1.0 };
+                        let speed = self.cfg.scroll_speed * 20.0;
+                        self.camera.zoom_delta(scroll_y.signum() * (scroll_y.abs().min(5.0)) * speed * sign);
+                    }
+                }
+
+                // Keyboard shortcuts
+                ctx.input(|i| {
+                    if i.key_pressed(egui::Key::Escape) {
+                        if self.camera.menu_open {
+                            self.camera.menu_open = false;
+                        } else if self.show_about {
+                            self.show_about = false;
+                            self.camera.about_open = false;
                         } else {
-                            default_color
+                            self.camera.should_close = true;
+                        }
+                    }
+                    if i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals) {
+                        self.camera.zoom(true);
+                    }
+                    if i.key_pressed(egui::Key::Minus) {
+                        self.camera.zoom(false);
+                    }
+                    if i.key_pressed(egui::Key::ArrowLeft) {
+                        self.camera.orbit_horizontal(0.05);
+                    }
+                    if i.key_pressed(egui::Key::ArrowRight) {
+                        self.camera.orbit_horizontal(-0.05);
+                    }
+                    if i.key_pressed(egui::Key::ArrowUp) {
+                        self.camera.orbit_vertical(-0.05);
+                    }
+                    if i.key_pressed(egui::Key::ArrowDown) {
+                        self.camera.orbit_vertical(0.05);
+                    }
+                });
+
+                // Offscreen WGPU rendering
+                let pixels_per_point = ctx.pixels_per_point();
+                let vp_width = (rect.width() * pixels_per_point).round() as u32;
+                let vp_height = (rect.height() * pixels_per_point).round() as u32;
+
+                if vp_width > 0 && vp_height > 0 {
+                    if let (Some(wgpu_state), Some(renderer)) =
+                        (&self.wgpu_render_state, &mut self.renderer)
+                    {
+                        let mut egui_renderer = wgpu_state.renderer.write();
+                        renderer.resize(vp_width, vp_height, &mut egui_renderer);
+
+                        let aspect = vp_width as f32 / vp_height as f32;
+                        let eye = self.camera.eye();
+                        let uniforms = Uniforms {
+                            view_proj: self.camera.view_projection(aspect).to_cols_array_2d(),
+                            camera_pos: [eye.x, eye.y, eye.z],
+                            _pad0: 0.0,
+                            light_dir: [0.5, 0.5, 1.0],
+                            _pad1: 0.0,
+                            object_color: [
+                                self.cfg.object_color[0] as f32 / 255.0,
+                                self.cfg.object_color[1] as f32 / 255.0,
+                                self.cfg.object_color[2] as f32 / 255.0,
+                                1.0,
+                            ],
+                            material_mode: match self.cfg.material_mode {
+                                crate::config::MaterialMode::Material => 0,
+                                crate::config::MaterialMode::Solid => 1,
+                                crate::config::MaterialMode::Wireframe => 2,
+                            },
+                            has_texture: 0,
+                            _pad2: [0, 0],
                         };
-                        child.set_lines_color(Some(line_col));
-                        child.set_lines_width(1.0, false);
-                    }
-                }
-            }
-        }
 
-        group_node.set_local_scale(scale_factor, scale_factor, scale_factor);
-        group_node.set_position(model_center);
+                        let bg_color = [
+                            self.cfg.background[0] as f32 / 255.0,
+                            self.cfg.background[1] as f32 / 255.0,
+                            self.cfg.background[2] as f32 / 255.0,
+                            1.0,
+                        ];
 
-        self.camera.set_object(group_node);
-        self.camera.set_center(model_center);
-        self.has_model = true;
-    }
+                        let show_dummy =
+                            !self.has_model && self.cfg.show_dummy_box && !self.camera.is_loading();
+                        let show_grid = self.cfg.show_grid;
+                        let show_axes = self.cfg.show_axes[0]
+                            || self.cfg.show_axes[1]
+                            || self.cfg.show_axes[2];
 
-    fn process_incoming_meshes(&mut self) {
-        match self.rx.try_recv() {
-            Ok(Ok(mesh)) => {
-                self.current_model_stats = Some(compute_stats(&mesh));
-                self.current_mesh_data = Some(mesh);
-                self.rebuild_model_node();
-                self.camera.set_loading(false);
-            }
-            Ok(Err(err)) => {
-                eprintln!("{}", err);
-                self.camera.set_loading(false);
-                self.window.set_title("Mesh");
-                if !self.has_model {
-                    if let Some(obj) = self.camera.object_mut() {
-                        if self.cfg.show_dummy_box {
-                            let actual_scale = self.cfg.object_scale * self.base_scale_factor;
-                            obj.set_local_scale(actual_scale, actual_scale, actual_scale);
-                            obj.set_visible(true);
-                        } else {
-                            obj.set_visible(false);
+                        renderer.render(&uniforms, bg_color, show_dummy, show_grid, show_axes);
+
+                        if let Some(tex_id) = renderer.egui_texture_id {
+                            ui.put(
+                                rect,
+                                egui::Image::from_texture(egui::load::SizedTexture::new(
+                                    tex_id,
+                                    rect.size(),
+                                )),
+                            );
                         }
                     }
                 }
-            }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {}
-        }
+            });
+
+        // Overlays & Context Menu
+        let ui_resp = self.render_ui(&ctx);
+        self.apply_ui_response(ui_resp);
     }
 }
 
@@ -659,4 +605,3 @@ fn compute_stats(mesh: &MeshData) -> overlay::ModelStats {
         }
     }
 }
-

@@ -143,55 +143,74 @@ fn format_count(val: usize) -> String {
 pub fn render_details_overlay(
     ctx: &Context,
     lang: Language,
-    size: kiss3d::glamx::Vec3,
+    size: glam::Vec3,
     stats: Option<ModelStats>,
 ) {
-    egui::Area::new(egui::Id::new("details_overlay"))
-        .anchor(Align2::RIGHT_BOTTOM, Vec2::new(-15.0, -15.0))
-        .order(egui::Order::Foreground)
-        .show(ctx, |ui| {
-            ui.style_mut().interaction.selectable_labels = false;
-            fn format_dim(val: f32) -> String {
-                let rounded = (val * 100.0).round() / 100.0;
-                if (rounded - rounded.round()).abs() < 1e-4 {
-                    format!("{:.0}", rounded)
-                } else if (rounded * 10.0 - (rounded * 10.0).round()).abs() < 1e-4 {
-                    format!("{:.1}", rounded)
-                } else {
-                    format!("{:.2}", rounded)
-                }
-            }
-            let dim_text = format!(
-                "X: {}   Y: {}   Z: {}",
-                format_dim(size.x),
-                format_dim(size.y),
-                format_dim(size.z)
-            );
+    let screen = ctx.content_rect();
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("details_overlay"),
+    ));
 
-            ui.with_layout(egui::Layout::top_down(egui::Align::RIGHT), |ui| {
-                ui.label(egui::RichText::new(lang.t(TextKey::Dimensions)).strong().size(12.0));
-                ui.label(egui::RichText::new(dim_text).size(12.0));
-                if let Some(st) = stats {
-                    ui.label(egui::RichText::new(lang.t(TextKey::Statistics)).strong().size(12.0));
-                    let vertices_text = format!(
-                        "{}: {}",
-                        lang.t(TextKey::Vertices),
-                        format_count(st.vertices),
-                    );
-                    ui.label(egui::RichText::new(vertices_text).size(12.0));
-                    let lines_text = format!(
-                        "{}: {}",
-                        lang.t(TextKey::Lines),
-                        format_count(st.lines),
-                    );
-                    ui.label(egui::RichText::new(lines_text).size(12.0));
-                    let faces_text = format!(
-                        "{}: {}",
-                        lang.t(TextKey::Faces),
-                        format_count(st.faces)
-                    );
-                    ui.label(egui::RichText::new(faces_text).size(12.0));
-                }
-            });
-        });
+    fn format_dim(val: f32) -> String {
+        let rounded = (val * 100.0).round() / 100.0;
+        if (rounded - rounded.round()).abs() < 1e-4 {
+            format!("{:.0}", rounded)
+        } else if (rounded * 10.0 - (rounded * 10.0).round()).abs() < 1e-4 {
+            format!("{:.1}", rounded)
+        } else {
+            format!("{:.2}", rounded)
+        }
+    }
+
+    let mut lines: Vec<(String, bool)> = Vec::new();
+    lines.push((lang.t(TextKey::Dimensions).to_string(), true));
+    lines.push((
+        format!(
+            "X: {}   Y: {}   Z: {}",
+            format_dim(size.x),
+            format_dim(size.y),
+            format_dim(size.z)
+        ),
+        false,
+    ));
+
+    if let Some(st) = stats {
+        lines.push((lang.t(TextKey::Statistics).to_string(), true));
+        lines.push((
+            format!("{}: {}", lang.t(TextKey::Vertices), format_count(st.vertices)),
+            false,
+        ));
+        lines.push((
+            format!("{}: {}", lang.t(TextKey::Lines), format_count(st.lines)),
+            false,
+        ));
+        lines.push((
+            format!("{}: {}", lang.t(TextKey::Faces), format_count(st.faces)),
+            false,
+        ));
+    }
+
+    let line_height = 16.0;
+    let right_x = screen.right() - 15.0;
+    let bottom_y = screen.bottom() - 15.0;
+
+    let font_regular = egui::FontId::proportional(12.0);
+    let font_bold = egui::FontId::proportional(12.0);
+    let text_color = egui::Color32::from_gray(210);
+    let strong_color = egui::Color32::WHITE;
+
+    let total_lines = lines.len() as f32;
+    for (i, (text, is_strong)) in lines.into_iter().enumerate() {
+        let y = bottom_y - (total_lines - 1.0 - i as f32) * line_height;
+        let color = if is_strong { strong_color } else { text_color };
+        let font = if is_strong { font_bold.clone() } else { font_regular.clone() };
+        painter.text(
+            egui::pos2(right_x, y),
+            Align2::RIGHT_BOTTOM,
+            text,
+            font,
+            color,
+        );
+    }
 }

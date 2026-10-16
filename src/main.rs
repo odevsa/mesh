@@ -6,6 +6,7 @@ mod config;
 mod dialog;
 mod i18n;
 mod loader;
+mod render;
 mod scene;
 mod ui;
 
@@ -39,20 +40,45 @@ fn main() {
         }
     };
 
-    let mut registry = LoaderRegistry::new();
-    registry.register(Box::new(loader::stl::StlLoader {}));
-    registry.register(Box::new(loader::threemf::ThreemfLoader {}));
-    registry.register(Box::new(loader::obj::ObjLoader {}));
-    registry.register(Box::new(loader::gltf::GltfLoader {}));
-    registry.register(Box::new(loader::fbx::FbxLoader {}));
-    let registry = Arc::new(registry);
+    let registry = Arc::new(LoaderRegistry::default_registry());
 
     let (tx, rx) = channel();
 
-    if let Some(path) = arg_path {
-        dialog::load_file_async(&path, registry.clone(), tx.clone());
+    if let Some(ref path) = arg_path {
+        dialog::load_file_async(path, registry.clone(), tx.clone());
     }
 
-    let app = App::new(rx, tx, registry, cfg, initial_loading);
-    app.run();
+    let mut native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([800.0, 600.0])
+            .with_min_inner_size([320.0, 240.0])
+            .with_title(if initial_loading { "Mesh - Loading..." } else { "Mesh" })
+            .with_drag_and_drop(true),
+        ..Default::default()
+    };
+
+    #[cfg(target_os = "linux")]
+    {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        native_options.event_loop_builder = Some(Box::new(|builder| {
+            // Under Wayland, winit 0.30's Wayland backend lacks WindowEvent::DroppedFile support entirely.
+            // On almost all Wayland desktops (GNOME, KDE, etc.), XWayland is available via DISPLAY.
+            // When DISPLAY is set, using X11 allows XDnD to work seamlessly across file managers.
+            if std::env::var("DISPLAY").map(|v| !v.is_empty()).unwrap_or(false)
+                && std::env::var("MESH_FORCE_WAYLAND").is_err()
+            {
+                builder.with_x11();
+            }
+        }));
+    }
+
+    if let Err(e) = eframe::run_native(
+        "Mesh",
+        native_options,
+        Box::new(move |cc| {
+            Ok(Box::new(App::new(cc, rx, tx, registry, cfg, initial_loading)))
+        }),
+    ) {
+        eprintln!("Failed to run eframe application: {}", e);
+    }
 }

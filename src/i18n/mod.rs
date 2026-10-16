@@ -319,6 +319,6 @@ mod tests {
         let deserialized: Language = serde_json::from_str("\"pt_br\"").unwrap();
         assert_eq!(deserialized, Language::PtBr);
         let deserialized_alias: Language = serde_json::from_str("\"pt-BR\"").unwrap();
-        assert_eq!(deserialized, Language::PtBr);
+        assert_eq!(deserialized_alias, Language::PtBr);
     }
 }
