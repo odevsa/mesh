@@ -49,12 +49,55 @@ impl Loader for FbxLoader {
         let path_str = path.to_str().ok_or_else(|| "invalid UTF-8 path".to_string())?;
         let scene = ufbx::load_file(path_str, opts).map_err(|e| format!("fbx parse error: {:?}", e))?;
 
+        let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+        let mut tex_cache: HashMap<String, Option<std::sync::Arc<super::TextureData>>> = HashMap::new();
+
+        let load_fbx_texture = |mat: &ufbx::Material, cache: &mut HashMap<String, Option<std::sync::Arc<super::TextureData>>>| -> Option<std::sync::Arc<super::TextureData>> {
+            let tex_ref = mat.pbr.base_color.texture.as_ref()
+                .or_else(|| mat.fbx.diffuse_color.texture.as_ref())
+                .or_else(|| mat.textures.iter().find(|t| t.material_prop == "DiffuseColor" || t.material_prop == "BaseColor").map(|t| &t.texture))
+                .or_else(|| mat.textures.first().map(|t| &t.texture));
+
+            let tex = tex_ref?.as_ref();
+
+            // 1. Embedded texture in FBX
+            if !tex.content.is_empty() {
+                let key = format!("embedded_{}", tex.element.element_id);
+                if let Some(cached) = cache.get(&key) {
+                    return cached.clone();
+                }
+                let loaded = super::load_texture_from_memory(&tex.content);
+                cache.insert(key, loaded.clone());
+                return loaded;
+            }
+
+            // 2. Relative filename or filename or absolute filename
+            for name in &[&tex.relative_filename, &tex.filename, &tex.absolute_filename] {
+                let s = name.as_ref().trim();
+                if !s.is_empty() {
+                    if let Some(cached) = cache.get(s) {
+                        return cached.clone();
+                    }
+                    if let Some(found_path) = super::resolve_relative_file(base_dir, s) {
+                        let loaded = super::load_texture_from_path(&found_path);
+                        cache.insert(s.to_string(), loaded.clone());
+                        if loaded.is_some() {
+                            return loaded;
+                        }
+                    }
+                }
+            }
+
+            None
+        };
+
         struct SubMeshAcc {
             positions: Vec<[f32; 3]>,
             normals: Vec<[f32; 3]>,
             uvs: Vec<[f32; 2]>,
             indices: Vec<[u32; 3]>,
             color: Option<[f32; 4]>,
+            texture: Option<std::sync::Arc<super::TextureData>>,
         }
 
         let mut positions = Vec::new();
@@ -85,7 +128,7 @@ impl Loader for FbxLoader {
                 }
             };
 
-            let mut mat_subs: HashMap<Option<[u8; 4]>, SubMeshAcc> = HashMap::new();
+            let mut mat_subs: HashMap<Option<u32>, SubMeshAcc> = HashMap::new();
 
             for (face_idx, face) in mesh.faces.iter().enumerate() {
                 let raw_mat_idx = if mesh.face_material.len() > face_idx {
@@ -94,20 +137,20 @@ impl Loader for FbxLoader {
                     0
                 };
                 let mat_idx = raw_mat_idx as usize;
-                let mat_color = get_mat(mat_idx).map(get_material_color);
-                let color_key = mat_color.map(|c| [
-                    (c[0].clamp(0.0, 1.0) * 255.0) as u8,
-                    (c[1].clamp(0.0, 1.0) * 255.0) as u8,
-                    (c[2].clamp(0.0, 1.0) * 255.0) as u8,
-                    (c[3].clamp(0.0, 1.0) * 255.0) as u8,
-                ]);
+                let mat_opt = get_mat(mat_idx);
+                let mat_key = mat_opt.map(|m| m.element.element_id);
 
-                let sub = mat_subs.entry(color_key).or_insert_with(|| SubMeshAcc {
-                    positions: Vec::new(),
-                    normals: Vec::new(),
-                    uvs: Vec::new(),
-                    indices: Vec::new(),
-                    color: mat_color,
+                let sub = mat_subs.entry(mat_key).or_insert_with(|| {
+                    let color = mat_opt.map(get_material_color);
+                    let texture = mat_opt.and_then(|m| load_fbx_texture(m, &mut tex_cache));
+                    SubMeshAcc {
+                        positions: Vec::new(),
+                        normals: Vec::new(),
+                        uvs: Vec::new(),
+                        indices: Vec::new(),
+                        color,
+                        texture,
+                    }
                 });
 
                 if face.num_indices >= 3 {
@@ -160,7 +203,7 @@ impl Loader for FbxLoader {
                     uvs: acc.uvs,
                     indices: acc.indices,
                     color: acc.color,
-                    ..Default::default()
+                    texture: acc.texture,
                 });
             }
         }
@@ -177,7 +220,7 @@ impl Loader for FbxLoader {
                     }
                 };
 
-                let mut mat_subs: HashMap<Option<[u8; 4]>, SubMeshAcc> = HashMap::new();
+                let mut mat_subs: HashMap<Option<u32>, SubMeshAcc> = HashMap::new();
 
                 for (face_idx, face) in mesh.faces.iter().enumerate() {
                     let raw_mat_idx = if mesh.face_material.len() > face_idx {
@@ -186,20 +229,20 @@ impl Loader for FbxLoader {
                         0
                     };
                     let mat_idx = raw_mat_idx as usize;
-                    let mat_color = get_mat(mat_idx).map(get_material_color);
-                    let color_key = mat_color.map(|c| [
-                        (c[0].clamp(0.0, 1.0) * 255.0) as u8,
-                        (c[1].clamp(0.0, 1.0) * 255.0) as u8,
-                        (c[2].clamp(0.0, 1.0) * 255.0) as u8,
-                        (c[3].clamp(0.0, 1.0) * 255.0) as u8,
-                    ]);
+                    let mat_opt = get_mat(mat_idx);
+                    let mat_key = mat_opt.map(|m| m.element.element_id);
 
-                    let sub = mat_subs.entry(color_key).or_insert_with(|| SubMeshAcc {
-                        positions: Vec::new(),
-                        normals: Vec::new(),
-                        uvs: Vec::new(),
-                        indices: Vec::new(),
-                        color: mat_color,
+                    let sub = mat_subs.entry(mat_key).or_insert_with(|| {
+                        let color = mat_opt.map(get_material_color);
+                        let texture = mat_opt.and_then(|m| load_fbx_texture(m, &mut tex_cache));
+                        SubMeshAcc {
+                            positions: Vec::new(),
+                            normals: Vec::new(),
+                            uvs: Vec::new(),
+                            indices: Vec::new(),
+                            color,
+                            texture,
+                        }
                     });
 
                     if face.num_indices >= 3 {
@@ -250,7 +293,7 @@ impl Loader for FbxLoader {
                         uvs: acc.uvs,
                         indices: acc.indices,
                         color: acc.color,
-                        ..Default::default()
+                        texture: acc.texture,
                     });
                 }
             }

@@ -59,9 +59,10 @@ impl Loader for ObjLoader {
                         raw_uvs.push([u, 1.0 - v]);
                     }
                     "mtllib" => {
-                        if let Some(mtl_file) = parts.next() {
-                            let mtl_path = base_dir.join(mtl_file);
+                        let mtl_file = trimmed["mtllib".len()..].trim();
+                        if let Some(mtl_path) = super::resolve_relative_file(base_dir, mtl_file) {
                             if let Ok(f) = std::fs::File::open(&mtl_path) {
+                                let mtl_dir = mtl_path.parent().unwrap_or(base_dir);
                                 let mut mtl_reader = BufReader::new(f);
                                 let mut mtl_line = String::new();
                                 let mut cur_mat = String::new();
@@ -82,17 +83,43 @@ impl Loader for ObjLoader {
                                             let g = g.clamp(0.0, 1.0).powf(1.0 / 2.2);
                                             let b = b.clamp(0.0, 1.0).powf(1.0 / 2.2);
                                             mtl_colors.insert(cur_mat.clone(), [r, g, b, 1.0]);
-                                        } else if (mkw == "map_Kd" || mkw == "map_Ka") && !cur_mat.is_empty() {
-                                            if let Some(tex_file) = mparts.next() {
-                                                let tex_path = base_dir.join(tex_file);
-                                                if let Ok(img) = image::open(&tex_path) {
-                                                    let rgba = img.to_rgba8();
-                                                    let (w, h) = rgba.dimensions();
-                                                    mtl_textures.insert(cur_mat.clone(), Arc::new(TextureData {
-                                                        width: w,
-                                                        height: h,
-                                                        rgba: rgba.into_raw(),
-                                                    }));
+                                        } else if (mkw.eq_ignore_ascii_case("map_Kd") || mkw.eq_ignore_ascii_case("map_Ka") || mkw.eq_ignore_ascii_case("map_BaseColor")) && !cur_mat.is_empty() {
+                                            // Extract texture path, skipping options like -s, -o, -bm, -clamp, etc.
+                                            let mut tex_file = None;
+                                            while let Some(tok) = mparts.next() {
+                                                if tok.starts_with('-') {
+                                                    match tok {
+                                                        "-s" | "-o" | "-t" => {
+                                                            let _ = mparts.next();
+                                                            let _ = mparts.next();
+                                                            let _ = mparts.next();
+                                                        }
+                                                        "-mm" => {
+                                                            let _ = mparts.next();
+                                                            let _ = mparts.next();
+                                                        }
+                                                        "-bm" | "-boost" | "-clamp" | "-blendu" | "-blendv" | "-imfchan" | "-type" => {
+                                                            let _ = mparts.next();
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                } else {
+                                                    tex_file = Some(tok);
+                                                }
+                                            }
+
+                                            // Fallback to substring after command if options parsing didn't find standard token
+                                            let tex_path_str = tex_file.map(|s| s.to_string()).unwrap_or_else(|| {
+                                                mtrimmed[mkw.len()..].trim().to_string()
+                                            });
+
+                                            if !tex_path_str.is_empty() {
+                                                let resolved = super::resolve_relative_file(mtl_dir, &tex_path_str)
+                                                    .or_else(|| super::resolve_relative_file(base_dir, &tex_path_str));
+                                                if let Some(tex_path) = resolved {
+                                                    if let Some(tex_data) = super::load_texture_from_path(&tex_path) {
+                                                        mtl_textures.insert(cur_mat.clone(), tex_data);
+                                                    }
                                                 }
                                             }
                                         }
