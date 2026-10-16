@@ -7,6 +7,8 @@ struct Uniforms {
     light_dir: vec3<f32>,
     _pad1: f32,
     object_color: vec4<f32>,
+    light_color: vec4<f32>,
+    shadow_color: vec4<f32>,
     material_mode: u32, // 0 = Material/Textured, 1 = Solid, 2 = Wireframe
     has_texture: u32,   // 0 = No, 1 = Yes
     _pad2: vec2<u32>,
@@ -61,7 +63,7 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @location
     }
 
     if (uniforms.material_mode == 2u) {
-        return base_color;
+        return vec4<f32>(base_color.rgb * 0.25, base_color.a);
     }
 
     var n = normalize(in.normal);
@@ -74,21 +76,39 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @location
 
     let v_dir = normalize(uniforms.camera_pos - in.world_pos);
 
-    // Key light offset slightly above/right from camera for crisp 3D depth
-    let key_dir = normalize(v_dir + vec3<f32>(0.25, 0.35, 0.15));
-    let diff1 = max(dot(n, key_dir), 0.0) * 0.55;
+    // 1. Generous Hemisphere Ambient Light
+    // Soft skylight from +Z and gentle ground bounce from -Z
+    let hemi_factor = n.z * 0.5 + 0.5;
+    let ambient_sky = vec3<f32>(0.55, 0.55, 0.58);
+    let ambient_ground = vec3<f32>(0.40, 0.40, 0.42);
+    var ambient_light = mix(ambient_ground, ambient_sky, hemi_factor);
 
-    // Headlight fill directly from camera position
-    let diff2 = max(dot(n, v_dir), 0.0) * 0.35;
+    // Incorporate user shadow_color if configured
+    if (length(uniforms.shadow_color.rgb) > 0.01) {
+        ambient_light = mix(ambient_light, uniforms.shadow_color.rgb * 0.75, 0.35);
+    }
 
-    // Specular highlight
+    // 2. Camera Headlight (ensures surfaces facing the camera are always well illuminated)
+    let ndotv = max(dot(n, v_dir), 0.0);
+    let headlight = ndotv * 0.35;
+
+    // 3. Key Light (slightly offset above/right of camera to give crisp 3D volume)
+    let key_dir = normalize(v_dir + vec3<f32>(0.25, 0.35, 0.20));
+    let key_diff = max(dot(n, key_dir), 0.0) * 0.45;
+
+    let direct_light = uniforms.light_color.rgb * (headlight + key_diff);
+
+    // 4. Specular Highlight
     let half_dir = normalize(key_dir + v_dir);
-    let spec = pow(max(dot(n, half_dir), 0.0), 32.0) * 0.35;
+    let spec = pow(max(dot(n, half_dir), 0.0), 32.0) * 0.25;
 
-    let ambient = 0.45;
-    let total_light = clamp(ambient + diff1 + diff2 + spec, 0.0, 1.40);
+    // 5. Subtle Rim Light (gives clean silhouettes from dark backgrounds)
+    let rim = pow(1.0 - ndotv, 3.5) * 0.18;
 
-    return vec4<f32>(base_color.rgb * total_light, base_color.a);
+    let total_light = ambient_light + direct_light + vec3<f32>(rim);
+    let final_rgb = clamp(base_color.rgb * total_light + uniforms.light_color.rgb * spec, vec3<f32>(0.0), vec3<f32>(1.0));
+
+    return vec4<f32>(final_rgb, base_color.a);
 }
 
 // Line rendering for Grid and Axes

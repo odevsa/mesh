@@ -27,6 +27,8 @@ pub struct Uniforms {
     pub light_dir: [f32; 3],
     pub _pad1: f32,
     pub object_color: [f32; 4],
+    pub light_color: [f32; 4],
+    pub shadow_color: [f32; 4],
     pub material_mode: u32, // 0 = Material / Textured, 1 = Solid, 2 = Wireframe
     pub has_texture: u32,
     pub _pad2: [u32; 2],
@@ -41,6 +43,8 @@ impl Default for Uniforms {
             light_dir: [0.5, 0.5, 1.0],
             _pad1: 0.0,
             object_color: [0.8, 0.8, 0.8, 1.0],
+            light_color: [0.8, 0.8, 0.8, 1.0],
+            shadow_color: [0.0, 0.0, 0.0, 1.0],
             material_mode: 0,
             has_texture: 0,
             _pad2: [0, 0],

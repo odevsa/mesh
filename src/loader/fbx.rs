@@ -168,17 +168,45 @@ impl Loader for FbxLoader {
                             sub.positions.push([tp.x as f32, tp.y as f32, tp.z as f32]);
 
                             let norm = if mesh.vertex_normal.exists {
-                                let n = mesh.vertex_normal[corner_idx as usize];
-                                let tn = ufbx::transform_direction(&node.node_to_world, n);
-                                [tn.x as f32, tn.y as f32, tn.z as f32]
+                                let raw_n = if !mesh.vertex_normal.indices.is_empty() && (corner_idx as usize) < mesh.vertex_normal.indices.len() {
+                                    let val_idx = mesh.vertex_normal.indices[corner_idx as usize] as usize;
+                                    mesh.vertex_normal.values.get(val_idx).copied()
+                                } else if (corner_idx as usize) < mesh.vertex_normal.values.len() {
+                                    mesh.vertex_normal.values.get(corner_idx as usize).copied()
+                                } else if p_idx < mesh.vertex_normal.values.len() {
+                                    mesh.vertex_normal.values.get(p_idx).copied()
+                                } else {
+                                    None
+                                };
+
+                                if let Some(n) = raw_n {
+                                    let tn = ufbx::transform_direction(&node.node_to_world, n);
+                                    [tn.x as f32, tn.y as f32, tn.z as f32]
+                                } else {
+                                    [0.0, 0.0, 1.0]
+                                }
                             } else {
                                 [0.0, 0.0, 1.0]
                             };
                             sub.normals.push(norm);
 
                             let uv = if mesh.vertex_uv.exists {
-                                let u = mesh.vertex_uv[corner_idx as usize];
-                                [u.x as f32, 1.0 - u.y as f32]
+                                let raw_u = if !mesh.vertex_uv.indices.is_empty() && (corner_idx as usize) < mesh.vertex_uv.indices.len() {
+                                    let val_idx = mesh.vertex_uv.indices[corner_idx as usize] as usize;
+                                    mesh.vertex_uv.values.get(val_idx).copied()
+                                } else if (corner_idx as usize) < mesh.vertex_uv.values.len() {
+                                    mesh.vertex_uv.values.get(corner_idx as usize).copied()
+                                } else if p_idx < mesh.vertex_uv.values.len() {
+                                    mesh.vertex_uv.values.get(p_idx).copied()
+                                } else {
+                                    None
+                                };
+
+                                if let Some(u) = raw_u {
+                                    [u.x as f32, 1.0 - u.y as f32]
+                                } else {
+                                    [0.0, 0.0]
+                                }
                             } else {
                                 [0.0, 0.0]
                             };
@@ -259,16 +287,44 @@ impl Loader for FbxLoader {
                                 sub.positions.push([p.x as f32, p.y as f32, p.z as f32]);
 
                                 let norm = if mesh.vertex_normal.exists {
-                                    let n = mesh.vertex_normal[corner_idx as usize];
-                                    [n.x as f32, n.y as f32, n.z as f32]
+                                    let raw_n = if !mesh.vertex_normal.indices.is_empty() && (corner_idx as usize) < mesh.vertex_normal.indices.len() {
+                                        let val_idx = mesh.vertex_normal.indices[corner_idx as usize] as usize;
+                                        mesh.vertex_normal.values.get(val_idx).copied()
+                                    } else if (corner_idx as usize) < mesh.vertex_normal.values.len() {
+                                        mesh.vertex_normal.values.get(corner_idx as usize).copied()
+                                    } else if p_idx < mesh.vertex_normal.values.len() {
+                                        mesh.vertex_normal.values.get(p_idx).copied()
+                                    } else {
+                                        None
+                                    };
+
+                                    if let Some(n) = raw_n {
+                                        [n.x as f32, n.y as f32, n.z as f32]
+                                    } else {
+                                        [0.0, 0.0, 1.0]
+                                    }
                                 } else {
                                     [0.0, 0.0, 1.0]
                                 };
                                 sub.normals.push(norm);
 
                                 let uv = if mesh.vertex_uv.exists {
-                                    let u = mesh.vertex_uv[corner_idx as usize];
-                                    [u.x as f32, 1.0 - u.y as f32]
+                                    let raw_u = if !mesh.vertex_uv.indices.is_empty() && (corner_idx as usize) < mesh.vertex_uv.indices.len() {
+                                        let val_idx = mesh.vertex_uv.indices[corner_idx as usize] as usize;
+                                        mesh.vertex_uv.values.get(val_idx).copied()
+                                    } else if (corner_idx as usize) < mesh.vertex_uv.values.len() {
+                                        mesh.vertex_uv.values.get(corner_idx as usize).copied()
+                                    } else if p_idx < mesh.vertex_uv.values.len() {
+                                        mesh.vertex_uv.values.get(p_idx).copied()
+                                    } else {
+                                        None
+                                    };
+
+                                    if let Some(u) = raw_u {
+                                        [u.x as f32, 1.0 - u.y as f32]
+                                    } else {
+                                        [0.0, 0.0]
+                                    }
                                 } else {
                                     [0.0, 0.0]
                                 };

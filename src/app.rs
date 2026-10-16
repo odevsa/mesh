@@ -517,6 +517,18 @@ impl eframe::App for App {
                                 self.cfg.object_color[2] as f32 / 255.0,
                                 1.0,
                             ],
+                            light_color: [
+                                self.cfg.light_color[0] as f32 / 255.0,
+                                self.cfg.light_color[1] as f32 / 255.0,
+                                self.cfg.light_color[2] as f32 / 255.0,
+                                1.0,
+                            ],
+                            shadow_color: [
+                                self.cfg.shadow_color[0] as f32 / 255.0,
+                                self.cfg.shadow_color[1] as f32 / 255.0,
+                                self.cfg.shadow_color[2] as f32 / 255.0,
+                                1.0,
+                            ],
                             material_mode: match self.cfg.material_mode {
                                 crate::config::MaterialMode::Material => 0,
                                 crate::config::MaterialMode::Solid => 1,

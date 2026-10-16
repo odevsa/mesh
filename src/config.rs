@@ -54,7 +54,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            background: [0x0A, 0x0A, 0x0A],
+            background: [0x22, 0x22, 0x22],
             object_color: [0xCC, 0xCC, 0xCC],
             light_color: [0xCC, 0xCC, 0xCC],
             shadow_color: [0x00, 0x00, 0x00],
@@ -68,7 +68,7 @@ impl Default for Config {
             show_grid: true,
             grid_size: 1.0,
             grid_divisions: 10,
-            grid_color: [0x21, 0x21, 0x21],
+            grid_color: [0x33, 0x33, 0x33],
             show_axes: [true, true, false],
             show_axis_direction: true,
             model_position: ModelPosition::Above,
