@@ -108,6 +108,7 @@ pub struct SceneRenderer {
     pub render_pipeline: wgpu::RenderPipeline,
     pub wireframe_pipeline: wgpu::RenderPipeline,
     pub line_pipeline: wgpu::RenderPipeline,
+    pub flat_pipeline: wgpu::RenderPipeline,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
     pub texture_bind_group_layout: wgpu::BindGroupLayout,
@@ -133,6 +134,9 @@ pub struct SceneRenderer {
 
     pub axes_buffer: Option<wgpu::Buffer>,
     pub axes_vertex_count: u32,
+    pub axes_cones_buffer: Option<wgpu::Buffer>,
+    pub axes_cones_buffer_capacity: u64,
+    pub axes_cones_vertex_count: u32,
 }
 
 impl SceneRenderer {
@@ -442,6 +446,61 @@ impl SceneRenderer {
             cache: None,
         });
 
+        let flat_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Flat Triangle Render Pipeline"),
+            layout: Some(&line_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_line"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<LineVertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                }],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_line"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Self::DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
         let dummy_box = Self::create_dummy_box(&device, &default_texture_bind_group);
 
         Self {
@@ -450,6 +509,7 @@ impl SceneRenderer {
             render_pipeline,
             wireframe_pipeline,
             line_pipeline,
+            flat_pipeline,
             uniform_buffer,
             uniform_bind_group,
             texture_bind_group_layout,
@@ -470,6 +530,9 @@ impl SceneRenderer {
             grid_vertex_count: 0,
             axes_buffer: None,
             axes_vertex_count: 0,
+            axes_cones_buffer: None,
+            axes_cones_buffer_capacity: 0,
+            axes_cones_vertex_count: 0,
         }
     }
 
@@ -953,10 +1016,9 @@ impl SceneRenderer {
         &mut self,
         half_size: f32,
         show_axes: [bool; 3],
-        show_axis_direction: bool,
+        _show_axis_direction: bool,
     ) {
         let mut lines = Vec::new();
-        let cone_size = 0.15;
 
         // X Axis (Red)
         if show_axes[0] {
@@ -968,12 +1030,6 @@ impl SceneRenderer {
             ];
             lines.push(LineVertex { position: [-half_size, 0.0, 0.0], color: col });
             lines.push(LineVertex { position: [half_size, 0.0, 0.0], color: col });
-            if show_axis_direction {
-                lines.push(LineVertex { position: [half_size, 0.0, 0.0], color: col });
-                lines.push(LineVertex { position: [half_size - cone_size, cone_size * 0.4, 0.0], color: col });
-                lines.push(LineVertex { position: [half_size, 0.0, 0.0], color: col });
-                lines.push(LineVertex { position: [half_size - cone_size, -cone_size * 0.4, 0.0], color: col });
-            }
         }
 
         // Y Axis (Green)
@@ -986,12 +1042,6 @@ impl SceneRenderer {
             ];
             lines.push(LineVertex { position: [0.0, -half_size, 0.0], color: col });
             lines.push(LineVertex { position: [0.0, half_size, 0.0], color: col });
-            if show_axis_direction {
-                lines.push(LineVertex { position: [0.0, half_size, 0.0], color: col });
-                lines.push(LineVertex { position: [cone_size * 0.4, half_size - cone_size, 0.0], color: col });
-                lines.push(LineVertex { position: [0.0, half_size, 0.0], color: col });
-                lines.push(LineVertex { position: [-cone_size * 0.4, half_size - cone_size, 0.0], color: col });
-            }
         }
 
         // Z Axis (Blue)
@@ -1004,12 +1054,6 @@ impl SceneRenderer {
             ];
             lines.push(LineVertex { position: [0.0, 0.0, -half_size], color: col });
             lines.push(LineVertex { position: [0.0, 0.0, half_size], color: col });
-            if show_axis_direction {
-                lines.push(LineVertex { position: [0.0, 0.0, half_size], color: col });
-                lines.push(LineVertex { position: [cone_size * 0.4, 0.0, half_size - cone_size], color: col });
-                lines.push(LineVertex { position: [0.0, 0.0, half_size], color: col });
-                lines.push(LineVertex { position: [-cone_size * 0.4, 0.0, half_size - cone_size], color: col });
-            }
         }
 
         if !lines.is_empty() {
@@ -1022,6 +1066,176 @@ impl SceneRenderer {
         } else {
             self.axes_buffer = None;
             self.axes_vertex_count = 0;
+        }
+    }
+
+    fn push_cone(
+        vertices: &mut Vec<LineVertex>,
+        base_center: glam::Vec3,
+        axis_dir: glam::Vec3,
+        height: f32,
+        radius: f32,
+        body_color: [f32; 4],
+        base_color: [f32; 4],
+        segments: usize,
+    ) {
+        let (u, v) = if axis_dir.x.abs() > 0.9 {
+            (glam::Vec3::Y, glam::Vec3::Z)
+        } else if axis_dir.y.abs() > 0.9 {
+            (glam::Vec3::Z, glam::Vec3::X)
+        } else {
+            (glam::Vec3::X, glam::Vec3::Y)
+        };
+
+        let tip = base_center + axis_dir * height;
+
+        let mut circle_pts = Vec::with_capacity(segments);
+        for i in 0..segments {
+            let angle = i as f32 * (std::f32::consts::TAU / segments as f32);
+            let pt = base_center + (u * angle.cos() + v * angle.sin()) * radius;
+            circle_pts.push(pt);
+        }
+
+        // 1. Base Disk triangles (facing towards -axis_dir, slightly darker)
+        for i in 0..segments {
+            let next = (i + 1) % segments;
+            vertices.push(LineVertex { position: [base_center.x, base_center.y, base_center.z], color: base_color });
+            vertices.push(LineVertex { position: [circle_pts[i].x, circle_pts[i].y, circle_pts[i].z], color: base_color });
+            vertices.push(LineVertex { position: [circle_pts[next].x, circle_pts[next].y, circle_pts[next].z], color: base_color });
+        }
+
+        // 2. Cone Side triangles (tapering forward to tip)
+        for i in 0..segments {
+            let next = (i + 1) % segments;
+            vertices.push(LineVertex { position: [tip.x, tip.y, tip.z], color: body_color });
+            vertices.push(LineVertex { position: [circle_pts[next].x, circle_pts[next].y, circle_pts[next].z], color: body_color });
+            vertices.push(LineVertex { position: [circle_pts[i].x, circle_pts[i].y, circle_pts[i].z], color: body_color });
+        }
+    }
+
+    pub fn update_axis_cones(
+        &mut self,
+        half_size: f32,
+        show_axes: [bool; 3],
+        show_axis_direction: bool,
+        eye: glam::Vec3,
+        projection: crate::config::Projection,
+        camera_dist: f32,
+    ) {
+        if !show_axis_direction || (!show_axes[0] && !show_axes[1] && !show_axes[2]) {
+            self.axes_cones_vertex_count = 0;
+            return;
+        }
+
+        let mut vertices: Vec<LineVertex> = Vec::with_capacity(3 * 24 * 6);
+        let segments = 24;
+
+        let tan_half_fov = (std::f32::consts::FRAC_PI_8).tan();
+        let target_ndc_height = 0.035;
+
+        // X Axis (Red)
+        if show_axes[0] {
+            let col = [
+                srgb_to_linear(246.0 / 255.0),
+                srgb_to_linear(54.0 / 255.0),
+                srgb_to_linear(82.0 / 255.0),
+                1.0,
+            ];
+            let base_col = [col[0] * 0.40, col[1] * 0.40, col[2] * 0.40, 1.0];
+            let base_pos = glam::Vec3::new(half_size, 0.0, 0.0);
+            let d = match projection {
+                crate::config::Projection::Perspective => (eye - base_pos).length().max(0.01),
+                crate::config::Projection::Orthographic => camera_dist.max(0.01),
+            };
+            let h = d * tan_half_fov * target_ndc_height;
+            let r = h * 0.38;
+            Self::push_cone(
+                &mut vertices,
+                base_pos,
+                glam::Vec3::X,
+                h,
+                r,
+                col,
+                base_col,
+                segments,
+            );
+        }
+
+        // Y Axis (Green)
+        if show_axes[1] {
+            let col = [
+                srgb_to_linear(126.0 / 255.0),
+                srgb_to_linear(194.0 / 255.0),
+                srgb_to_linear(18.0 / 255.0),
+                1.0,
+            ];
+            let base_col = [col[0] * 0.40, col[1] * 0.40, col[2] * 0.40, 1.0];
+            let base_pos = glam::Vec3::new(0.0, half_size, 0.0);
+            let d = match projection {
+                crate::config::Projection::Perspective => (eye - base_pos).length().max(0.01),
+                crate::config::Projection::Orthographic => camera_dist.max(0.01),
+            };
+            let h = d * tan_half_fov * target_ndc_height;
+            let r = h * 0.38;
+            Self::push_cone(
+                &mut vertices,
+                base_pos,
+                glam::Vec3::Y,
+                h,
+                r,
+                col,
+                base_col,
+                segments,
+            );
+        }
+
+        // Z Axis (Blue)
+        if show_axes[2] {
+            let col = [
+                srgb_to_linear(47.0 / 255.0),
+                srgb_to_linear(131.0 / 255.0),
+                srgb_to_linear(227.0 / 255.0),
+                1.0,
+            ];
+            let base_col = [col[0] * 0.40, col[1] * 0.40, col[2] * 0.40, 1.0];
+            let base_pos = glam::Vec3::new(0.0, 0.0, half_size);
+            let d = match projection {
+                crate::config::Projection::Perspective => (eye - base_pos).length().max(0.01),
+                crate::config::Projection::Orthographic => camera_dist.max(0.01),
+            };
+            let h = d * tan_half_fov * target_ndc_height;
+            let r = h * 0.38;
+            Self::push_cone(
+                &mut vertices,
+                base_pos,
+                glam::Vec3::Z,
+                h,
+                r,
+                col,
+                base_col,
+                segments,
+            );
+        }
+
+        if !vertices.is_empty() {
+            let needed_bytes = (vertices.len() * std::mem::size_of::<LineVertex>()) as u64;
+            if self.axes_cones_buffer.is_none() || self.axes_cones_buffer_capacity < needed_bytes {
+                let capacity = needed_bytes.max(16384);
+                self.axes_cones_buffer = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Axes Cones Vertex Buffer"),
+                    size: capacity,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }));
+                self.axes_cones_buffer_capacity = capacity;
+            }
+
+            if let Some(buf) = &self.axes_cones_buffer {
+                self.queue.write_buffer(buf, 0, bytemuck::cast_slice(&vertices));
+                self.axes_cones_vertex_count = vertices.len() as u32;
+            }
+        } else {
+            self.axes_cones_vertex_count = 0;
         }
     }
 
@@ -1134,6 +1348,16 @@ impl SceneRenderer {
                 if let (Some(buf), count) = (&self.axes_buffer, self.axes_vertex_count) {
                     if count > 0 {
                         pass.set_pipeline(&self.line_pipeline);
+                        pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                        pass.set_vertex_buffer(0, buf.slice(..));
+                        pass.draw(0..count, 0..1);
+                    }
+                }
+
+                // 4. Draw Axis Direction Cones (solid flat-shaded 3D cones)
+                if let (Some(buf), count) = (&self.axes_cones_buffer, self.axes_cones_vertex_count) {
+                    if count > 0 {
+                        pass.set_pipeline(&self.flat_pipeline);
                         pass.set_bind_group(0, &self.uniform_bind_group, &[]);
                         pass.set_vertex_buffer(0, buf.slice(..));
                         pass.draw(0..count, 0..1);

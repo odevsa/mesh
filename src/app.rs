@@ -634,6 +634,19 @@ impl eframe::App for App {
                             || self.cfg.show_axes[1]
                             || self.cfg.show_axes[2];
 
+                        if show_axes {
+                            renderer.update_axis_cones(
+                                self.cfg.grid_size,
+                                self.cfg.show_axes,
+                                self.cfg.show_axis_direction,
+                                eye,
+                                self.camera.projection,
+                                self.camera.dist,
+                            );
+                        } else {
+                            renderer.axes_cones_vertex_count = 0;
+                        }
+
                         renderer.render(&uniforms, bg_color, show_dummy, show_grid, show_axes);
 
                         if let Some(tex_id) = renderer.egui_texture_id {
