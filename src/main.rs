@@ -48,12 +48,32 @@ fn main() {
         dialog::load_file_async(path, registry.clone(), tx.clone());
     }
 
+    let icon = {
+        let icon_bytes = include_bytes!("../packaging/linux/assets/icons/hicolor/256x256/apps/mesh.png");
+        image::load_from_memory(icon_bytes).ok().map(|img| {
+            let rgba = img.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            egui::IconData {
+                rgba: rgba.into_raw(),
+                width,
+                height,
+            }
+        })
+    };
+
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([800.0, 600.0])
+        .with_min_inner_size([320.0, 240.0])
+        .with_title(if initial_loading { "Mesh - Loading..." } else { "Mesh" })
+        .with_app_id("mesh")
+        .with_drag_and_drop(true);
+
+    if let Some(icon) = icon {
+        viewport = viewport.with_icon(icon);
+    }
+
     let mut native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([800.0, 600.0])
-            .with_min_inner_size([320.0, 240.0])
-            .with_title(if initial_loading { "Mesh - Loading..." } else { "Mesh" })
-            .with_drag_and_drop(true),
+        viewport,
         ..Default::default()
     };
 
