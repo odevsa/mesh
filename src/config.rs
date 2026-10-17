@@ -87,7 +87,7 @@ impl Default for Config {
             show_dummy_box: false,
             show_dimensions: true,
             material_mode: MaterialMode::Material,
-            projection: Projection::Orthographic,
+            projection: Projection::Perspective,
             language: Language::Auto,
         }
     }
