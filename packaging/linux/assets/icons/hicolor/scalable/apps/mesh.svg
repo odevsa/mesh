@@ -1,16 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 384.054 384.054">
-  <defs>
-    <style>
-      .cls-1{fill:#e6e6e6}
-      .cls-2{fill:#b3b3b3}
-      .cls-3{fill:#808080}
-    </style>
-  </defs>
-  <title>Untitled-1</title>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="384.054" height="384.054" viewBox="0 0 384.054 384.054">
+  <title>mesh.svg</title>
   <g id="Layer_1" data-name="Layer 1">
-    <path d="M192.027 3.702 L358.795 91.168 L192.027 178.686 L26.543 91.168 Z" class="cls-1"/>
-    <path d="M187.669 380.587 L187.027 188.686 L21.543 101.168 L21.543 292.664 Z" class="cls-2"/>
-    <path d="M363.795 292.664 L363.795 101.168 L197.027 188.686 L197.669 380.587 Z" class="cls-3"/>
+    <path d="M21.543 292.664 L21.543 101.168 L187.027 188.686 L187.299 270.098 L81.543 214.168 L81.543 324.419 Z" fill="#808080"/>
+    <path d="M197.027 188.686 L363.795 101.168 L363.795 292.664 L303.795 324.419 L303.795 214.168 L197.299 270.056 Z" fill="#4d4d4d"/>
+    <path d="M91.543 329.712 L91.543 231.168 L187.339 281.831 L187.669 380.587 Z" fill="#b3b3b3"/>
+    <path d="M197.338 281.787 L293.795 231.168 L293.795 329.712 L197.669 380.587 Z" fill="#808080"/>
+    <path d="M26.543 91.168 L95.58 54.679 L192.027 105.686 L289.223 54.679 L358.795 91.168 L192.027 178.686 Z" fill="#999999"/>
+    <g>
+      <path d="M106.928 48.681 L192.027 3.702 L277.786 48.681 L192.027 93.686 Z" fill="#cccccc"/>
+    </g>
   </g>
 </svg>
