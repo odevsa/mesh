@@ -105,14 +105,14 @@ clean:
     rm -rf dist dist-windows mesh.iconset
     cargo clean
 
-# Synchronize project version across manifests and packaging scripts (e.g., just version 0.2.0)
+# Display current version or synchronize across manifests and packaging scripts (e.g., just version or just version 0.2.0)
 version new_version="":
     #!/usr/bin/env bash
     NEW_V="{{new_version}}"
     NEW_V="${NEW_V#v}"
     if [ -z "$NEW_V" ]; then
-        echo "Error: Missing version. Ex: just version 1.2.3"
-        exit 1
+        sed -n -E 's/^version = "([^"]+)"/\1/p' Cargo.toml | head -n 1
+        exit 0
     fi
     awk -v new_ver="$NEW_V" '/^\[package\]/ {p=1} /^version =/ && p {sub(/".*"/, "\"" new_ver "\""); p=0} 1' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
     if [ -f packaging/windows/mesh.nsi ]; then
