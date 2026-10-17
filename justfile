@@ -115,9 +115,6 @@ version new_version="":
         exit 1
     fi
     awk -v new_ver="$NEW_V" '/^\[package\]/ {p=1} /^version =/ && p {sub(/".*"/, "\"" new_ver "\""); p=0} 1' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
-    if [ -f .mock/event.json ]; then
-        sed -i 's/"tag_name": "v[^"]*"/"tag_name": "v'"$NEW_V"'"/' .mock/event.json
-    fi
     cargo check --quiet
     printf "Version synchronized to %s\n" "$NEW_V"
 
@@ -136,25 +133,25 @@ release target="":
     mkdir -p ./dist
     if [ -z "$TARGET" ]; then
         echo "Running Linux and Windows release workflows locally via act..."
-        act release -e .mock/event.json --artifact-server-path ./dist \
+        act release --artifact-server-path ./dist \
             -W .github/workflows/release-linux.yml \
             -W .github/workflows/release-windows.yml \
             -P windows-latest=catthehacker/ubuntu:act-latest \
             -P ubuntu-24.04-arm=catthehacker/ubuntu:act-latest
     elif [ "$TARGET" = "linux" ]; then
         echo "Running Linux release workflow..."
-        act release -e .mock/event.json --artifact-server-path ./dist \
+        act release --artifact-server-path ./dist \
             -W .github/workflows/release-linux.yml \
             -P ubuntu-24.04-arm=catthehacker/ubuntu:act-latest
     elif [ "$TARGET" = "windows" ]; then
         echo "Running Windows release workflow..."
-        act release -e .mock/event.json --artifact-server-path ./dist \
+        act release --artifact-server-path ./dist \
             -W .github/workflows/release-windows.yml \
             -P windows-latest=catthehacker/ubuntu:act-latest
     elif [ "$TARGET" = "mac" ] || [ "$TARGET" = "macos" ]; then
         echo "Note: act on Linux cannot emulate macOS runners (no macOS Docker images)."
         echo "Running macOS release workflow test if macos runner is available..."
-        act release -e .mock/event.json --artifact-server-path ./dist \
+        act release --artifact-server-path ./dist \
             -W .github/workflows/release-macos.yml || true
     else
         echo "Error: Unknown target '$TARGET'. Use 'linux', 'windows', 'mac', or leave empty for all."
