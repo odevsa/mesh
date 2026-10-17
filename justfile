@@ -105,7 +105,7 @@ clean:
     rm -rf dist dist-windows mesh.iconset
     cargo clean
 
-# Synchronize project version across manifests and mock files (e.g., just version 0.2.0)
+# Synchronize project version across manifests and packaging scripts (e.g., just version 0.2.0)
 version new_version="":
     #!/usr/bin/env bash
     NEW_V="{{new_version}}"
@@ -115,6 +115,9 @@ version new_version="":
         exit 1
     fi
     awk -v new_ver="$NEW_V" '/^\[package\]/ {p=1} /^version =/ && p {sub(/".*"/, "\"" new_ver "\""); p=0} 1' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+    if [ -f packaging/windows/mesh.nsi ]; then
+        sed -i -E 's/(!define VERSION ")[^"]*(")/\1'"$NEW_V"'\2/' packaging/windows/mesh.nsi
+    fi
     cargo check --quiet
     printf "Version synchronized to %s\n" "$NEW_V"
 

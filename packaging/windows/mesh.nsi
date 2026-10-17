@@ -4,7 +4,7 @@
 Unicode True
 
 !ifndef VERSION
-  !define VERSION "0.1.6"
+  !define VERSION "0.2.1"
 !endif
 
 !ifndef ARCH
@@ -16,7 +16,7 @@ Unicode True
 !endif
 
 !ifndef ASSETS_DIR
-  !define ASSETS_DIR "assets"
+  !define ASSETS_DIR "packaging\windows\assets"
 !endif
 
 !ifndef OUT_DIR
@@ -55,6 +55,54 @@ RequestExecutionLevel admin
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Portuguese"
 
+; Macro to register file extension and MIME associations
+!macro RegisterExtension EXT PROGID DESC MIME
+  ; Associate file extension
+  WriteRegStr HKLM "Software\Classes\.${EXT}" "" "${PROGID}"
+  WriteRegStr HKLM "Software\Classes\.${EXT}" "Content Type" "${MIME}"
+  WriteRegStr HKLM "Software\Classes\.${EXT}\OpenWithProgids" "${PROGID}" ""
+
+  ; MIME Database mapping
+  WriteRegStr HKLM "Software\Classes\MIME\Database\Content Type\${MIME}" "Extension" ".${EXT}"
+
+  ; SystemFileAssociations for Explorer context menu
+  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\.${EXT}\OpenWithList\mesh.exe" "" ""
+
+  ; ProgID definition
+  WriteRegStr HKLM "Software\Classes\${PROGID}" "" "${DESC}"
+  WriteRegStr HKLM "Software\Classes\${PROGID}" "FriendlyTypeName" "${DESC}"
+  WriteRegStr HKLM "Software\Classes\${PROGID}\DefaultIcon" "" "$INSTDIR\mesh.ico,0"
+  WriteRegStr HKLM "Software\Classes\${PROGID}\shell" "" "open"
+  WriteRegStr HKLM "Software\Classes\${PROGID}\shell\open" "" "Open with Mesh"
+  WriteRegStr HKLM "Software\Classes\${PROGID}\shell\open\command" "" '"$INSTDIR\mesh.exe" "%1"'
+  WriteRegStr HKLM "Software\Classes\${PROGID}\SupportedMimeTypes" "${MIME}" ""
+
+  ; Capabilities for Windows Default Programs / Apps
+  WriteRegStr HKLM "Software\Mesh\Capabilities\FileAssociations" ".${EXT}" "${PROGID}"
+  WriteRegStr HKLM "Software\Mesh\Capabilities\MimeAssociations" "${MIME}" "${PROGID}"
+
+  ; Applications\mesh.exe supported types
+  WriteRegStr HKLM "Software\Classes\Applications\mesh.exe\SupportedTypes" ".${EXT}" ""
+!macroend
+
+!macro UnregisterExtension EXT PROGID
+  ; Remove ProgID
+  DeleteRegKey HKLM "Software\Classes\${PROGID}"
+
+  ; Remove OpenWithProgids value
+  DeleteRegValue HKLM "Software\Classes\.${EXT}\OpenWithProgids" "${PROGID}"
+
+  ; Remove SystemFileAssociations
+  DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.${EXT}\OpenWithList\mesh.exe"
+
+  ; If extension (Default) points to this ProgID, clear it
+  ReadRegStr $0 HKLM "Software\Classes\.${EXT}" ""
+  StrCmp $0 "${PROGID}" unreg_${EXT}_match unreg_${EXT}_skip
+unreg_${EXT}_match:
+  DeleteRegValue HKLM "Software\Classes\.${EXT}" ""
+unreg_${EXT}_skip:
+!macroend
+
 Section "Mesh Application" SecCore
   SetShellVarContext all
   SetOutPath "$INSTDIR"
@@ -84,6 +132,29 @@ Section "Mesh Application" SecCore
   IntFmt $0 "0x%08X" $0
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Mesh" "EstimatedSize" "$0"
 
+  ; App Paths (allows running "mesh" or "mesh.exe" from Run dialog or command line)
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\mesh.exe" "" "$INSTDIR\mesh.exe"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\mesh.exe" "Path" "$INSTDIR"
+
+  ; Applications registration for "Open with..."
+  WriteRegStr HKLM "Software\Classes\Applications\mesh.exe" "FriendlyAppName" "Mesh"
+  WriteRegStr HKLM "Software\Classes\Applications\mesh.exe\DefaultIcon" "" "$INSTDIR\mesh.ico,0"
+  WriteRegStr HKLM "Software\Classes\Applications\mesh.exe\shell\open\command" "" '"$INSTDIR\mesh.exe" "%1"'
+
+  ; RegisteredApplications (Windows Default Apps & Settings)
+  WriteRegStr HKLM "Software\RegisteredApplications" "Mesh" "Software\Mesh\Capabilities"
+  WriteRegStr HKLM "Software\Mesh\Capabilities" "ApplicationName" "Mesh"
+  WriteRegStr HKLM "Software\Mesh\Capabilities" "ApplicationDescription" "Mesh - A lightweight 3D Mesh Viewer"
+  WriteRegStr HKLM "Software\Mesh\Capabilities" "ApplicationIcon" "$INSTDIR\mesh.ico,0"
+
+  ; File Associations & MIME Types
+  !insertmacro RegisterExtension "stl" "Mesh.stl" "3D STL Model" "model/stl"
+  !insertmacro RegisterExtension "3mf" "Mesh.3mf" "3D 3MF Model" "model/3mf"
+  !insertmacro RegisterExtension "obj" "Mesh.obj" "Wavefront 3D Object" "model/obj"
+  !insertmacro RegisterExtension "gltf" "Mesh.gltf" "glTF 3D Model" "model/gltf+json"
+  !insertmacro RegisterExtension "glb" "Mesh.glb" "Binary glTF 3D Model" "model/gltf-binary"
+  !insertmacro RegisterExtension "fbx" "Mesh.fbx" "Autodesk FBX Model" "model/fbx"
+
   ; Start Menu Shortcuts
   CreateDirectory "$SMPROGRAMS\Mesh"
   CreateShortcut "$SMPROGRAMS\Mesh\Mesh.lnk" "$INSTDIR\mesh.exe" "" "$INSTDIR\mesh.ico" 0
@@ -94,6 +165,9 @@ Section "Mesh Application" SecCore
 
   ; Desktop Shortcut
   CreateShortcut "$DESKTOP\Mesh.lnk" "$INSTDIR\mesh.exe" "" "$INSTDIR\mesh.ico" 0
+
+  ; Notify Windows Shell of association changes
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 SectionEnd
 
 Section "Uninstall"
@@ -111,7 +185,23 @@ Section "Uninstall"
   Delete "$INSTDIR\uninstall.exe"
   RMDir "$INSTDIR"
 
+  ; Remove File Associations
+  !insertmacro UnregisterExtension "stl" "Mesh.stl"
+  !insertmacro UnregisterExtension "3mf" "Mesh.3mf"
+  !insertmacro UnregisterExtension "obj" "Mesh.obj"
+  !insertmacro UnregisterExtension "gltf" "Mesh.gltf"
+  !insertmacro UnregisterExtension "glb" "Mesh.glb"
+  !insertmacro UnregisterExtension "fbx" "Mesh.fbx"
+
+  ; Remove Default Programs and App registration
+  DeleteRegValue HKLM "Software\RegisteredApplications" "Mesh"
+  DeleteRegKey HKLM "Software\Classes\Applications\mesh.exe"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\App Paths\mesh.exe"
+
   ; Remove registry keys
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Mesh"
   DeleteRegKey HKLM "Software\Mesh"
+
+  ; Notify Windows Shell of association changes
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 SectionEnd
