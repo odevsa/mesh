@@ -1,4 +1,4 @@
-use crate::camera::FixedCenterCamera;
+use crate::camera::{FixedCenterCamera, ORBIT_STEP};
 use crate::config::Config;
 use crate::dialog;
 use crate::loader::{self, LoaderRegistry, MeshData};
@@ -71,7 +71,7 @@ impl App {
             cfg.object_scale * base_scale_factor,
         );
         let center = Vec3::new(0.0, 0.0, initial_z_offset);
-        let eye = center + Vec3::new(cfg.camera_eye[0], cfg.camera_eye[1], cfg.camera_eye[2]);
+        let eye = center + cfg.camera_eye_vec();
 
         let dist_step_value = 1.0 + (cfg.scroll_speed * if cfg.invert_scroll { 1.0 } else { -1.0 });
 
@@ -83,6 +83,7 @@ impl App {
             cfg.scroll_max,
             cfg.smooth_orbit,
         );
+        camera.projection = cfg.projection;
         camera.set_loading(initial_loading);
 
         Self {
@@ -136,18 +137,15 @@ impl App {
     }
 
     fn reset_camera(&mut self) {
-        let eye_offset = Vec3::new(
-            self.cfg.camera_eye[0],
-            self.cfg.camera_eye[1],
-            self.cfg.camera_eye[2],
-        );
-        let current_center = self.camera.center();
-        self.camera.reset_view(current_center + eye_offset, current_center);
+        let eye_offset = self.cfg.camera_eye_vec();
+        let center = self.camera.initial_center;
+        self.camera.reset_view(center + eye_offset, center);
     }
 
     fn reset_defaults(&mut self) {
         self.cfg = Config::default();
         let _ = self.cfg.save();
+        self.camera.projection = self.cfg.projection;
         self.rebuild_grid_and_axes();
         self.apply_controls_settings();
         self.update_model_transform();
@@ -308,6 +306,10 @@ impl App {
             self.reset_camera();
         }
 
+        if resp.projection_changed {
+            self.camera.projection = self.cfg.projection;
+        }
+
         if resp.reset_defaults_requested {
             self.reset_defaults();
         }
@@ -419,6 +421,32 @@ impl eframe::App for App {
                     self.camera.orbit_vertical(-delta.y * 0.01);
                 }
 
+                // Middle mouse drag for camera pan
+                let middle_delta = if response.dragged_by(egui::PointerButton::Middle) {
+                    response.drag_delta()
+                } else if (response.hovered() || response.is_pointer_button_down_on())
+                    && ctx.input(|i| i.pointer.button_down(egui::PointerButton::Middle))
+                {
+                    ctx.input(|i| i.pointer.delta())
+                } else {
+                    egui::Vec2::ZERO
+                };
+
+                if middle_delta != egui::Vec2::ZERO {
+                    let max_pan = if self.has_model {
+                        let scaled_size = self.current_model_size * (self.base_scale_factor * self.cfg.object_scale);
+                        Vec3::new(
+                            scaled_size.x.min(self.cfg.object_scale).max(self.cfg.object_scale * 0.1),
+                            scaled_size.y.min(self.cfg.object_scale).max(self.cfg.object_scale * 0.1),
+                            scaled_size.z.min(self.cfg.object_scale).max(self.cfg.object_scale * 0.1),
+                        )
+                    } else {
+                        Vec3::splat(self.cfg.object_scale)
+                    };
+                    self.camera.pan(middle_delta.x, middle_delta.y, rect.height(), max_pan);
+                    ctx.request_repaint();
+                }
+
                 // Double-click to open file dialog
                 if response.double_clicked_by(egui::PointerButton::Primary) {
                     self.trigger_file_dialog();
@@ -460,7 +488,35 @@ impl eframe::App for App {
                 }
 
                 // Keyboard shortcuts
+                let wants_kb = ctx.egui_wants_keyboard_input();
+                enum CamAction {
+                    Reset,
+                    Top,
+                    Bottom,
+                    Front,
+                    Back,
+                    Right,
+                    Left,
+                    ToggleProjection,
+                }
+                let mut cam_action = None;
+
                 ctx.input(|i| {
+                    if !wants_kb {
+                        let ctrl = i.modifiers.ctrl || i.modifiers.command;
+                        if i.key_pressed(egui::Key::Num0) {
+                            cam_action = Some(CamAction::Reset);
+                        } else if i.key_pressed(egui::Key::Num7) {
+                            cam_action = Some(if ctrl { CamAction::Bottom } else { CamAction::Top });
+                        } else if i.key_pressed(egui::Key::Num3) {
+                            cam_action = Some(if ctrl { CamAction::Left } else { CamAction::Right });
+                        } else if i.key_pressed(egui::Key::Num1) {
+                            cam_action = Some(if ctrl { CamAction::Back } else { CamAction::Front });
+                        } else if i.key_pressed(egui::Key::Num5) {
+                            cam_action = Some(CamAction::ToggleProjection);
+                        }
+                    }
+
                     if i.key_pressed(egui::Key::Escape) {
                         if self.camera.menu_open {
                             self.camera.menu_open = false;
@@ -477,19 +533,40 @@ impl eframe::App for App {
                     if i.key_pressed(egui::Key::Minus) {
                         self.camera.zoom(false);
                     }
-                    if i.key_pressed(egui::Key::ArrowLeft) {
-                        self.camera.orbit_horizontal(0.05);
+                    if i.key_pressed(egui::Key::ArrowLeft) || (!wants_kb && i.key_pressed(egui::Key::Num4)) {
+                        self.camera.orbit_horizontal_instant(-ORBIT_STEP);
                     }
-                    if i.key_pressed(egui::Key::ArrowRight) {
-                        self.camera.orbit_horizontal(-0.05);
+                    if i.key_pressed(egui::Key::ArrowRight) || (!wants_kb && i.key_pressed(egui::Key::Num6)) {
+                        self.camera.orbit_horizontal_instant(ORBIT_STEP);
                     }
-                    if i.key_pressed(egui::Key::ArrowUp) {
-                        self.camera.orbit_vertical(-0.05);
+                    if i.key_pressed(egui::Key::ArrowUp) || (!wants_kb && i.key_pressed(egui::Key::Num8)) {
+                        self.camera.orbit_vertical_instant(-ORBIT_STEP);
                     }
-                    if i.key_pressed(egui::Key::ArrowDown) {
-                        self.camera.orbit_vertical(0.05);
+                    if i.key_pressed(egui::Key::ArrowDown) || (!wants_kb && i.key_pressed(egui::Key::Num2)) {
+                        self.camera.orbit_vertical_instant(ORBIT_STEP);
                     }
                 });
+
+                if let Some(action) = cam_action {
+                    self.camera.menu_open = false;
+                    match action {
+                        CamAction::Reset => self.reset_camera(),
+                        CamAction::Top => self.camera.set_view_top(),
+                        CamAction::Bottom => self.camera.set_view_bottom(),
+                        CamAction::Front => self.camera.set_view_front(),
+                        CamAction::Back => self.camera.set_view_back(),
+                        CamAction::Right => self.camera.set_view_right(),
+                        CamAction::Left => self.camera.set_view_left(),
+                        CamAction::ToggleProjection => {
+                            let new_proj = self.camera.toggle_projection();
+                            self.cfg.projection = new_proj;
+                            if let Err(e) = self.cfg.save() {
+                                eprintln!("Failed to save config: {}", e);
+                            }
+                        }
+                    }
+                    ctx.request_repaint();
+                }
 
                 // Offscreen WGPU rendering
                 let pixels_per_point = ctx.pixels_per_point();
@@ -505,28 +582,33 @@ impl eframe::App for App {
 
                         let aspect = vp_width as f32 / vp_height as f32;
                         let eye = self.camera.eye();
+                        let forward = (self.camera.center - eye).normalize_or_zero();
+                        let right = forward.cross(glam::Vec3::Z).normalize_or(glam::Vec3::X);
+                        let up = right.cross(forward).normalize_or(glam::Vec3::Z);
+                        let key_dir = (-forward + right * 0.55 + up * 0.65).normalize();
+
                         let uniforms = Uniforms {
                             view_proj: self.camera.view_projection(aspect).to_cols_array_2d(),
                             camera_pos: [eye.x, eye.y, eye.z],
                             _pad0: 0.0,
-                            light_dir: [0.5, 0.5, 1.0],
+                            light_dir: [key_dir.x, key_dir.y, key_dir.z],
                             _pad1: 0.0,
                             object_color: [
-                                self.cfg.object_color[0] as f32 / 255.0,
-                                self.cfg.object_color[1] as f32 / 255.0,
-                                self.cfg.object_color[2] as f32 / 255.0,
+                                crate::render::renderer::srgb_to_linear(self.cfg.object_color[0] as f32 / 255.0),
+                                crate::render::renderer::srgb_to_linear(self.cfg.object_color[1] as f32 / 255.0),
+                                crate::render::renderer::srgb_to_linear(self.cfg.object_color[2] as f32 / 255.0),
                                 1.0,
                             ],
                             light_color: [
-                                self.cfg.light_color[0] as f32 / 255.0,
-                                self.cfg.light_color[1] as f32 / 255.0,
-                                self.cfg.light_color[2] as f32 / 255.0,
+                                crate::render::renderer::srgb_to_linear(self.cfg.light_color[0] as f32 / 255.0),
+                                crate::render::renderer::srgb_to_linear(self.cfg.light_color[1] as f32 / 255.0),
+                                crate::render::renderer::srgb_to_linear(self.cfg.light_color[2] as f32 / 255.0),
                                 1.0,
                             ],
                             shadow_color: [
-                                self.cfg.shadow_color[0] as f32 / 255.0,
-                                self.cfg.shadow_color[1] as f32 / 255.0,
-                                self.cfg.shadow_color[2] as f32 / 255.0,
+                                crate::render::renderer::srgb_to_linear(self.cfg.shadow_color[0] as f32 / 255.0),
+                                crate::render::renderer::srgb_to_linear(self.cfg.shadow_color[1] as f32 / 255.0),
+                                crate::render::renderer::srgb_to_linear(self.cfg.shadow_color[2] as f32 / 255.0),
                                 1.0,
                             ],
                             material_mode: match self.cfg.material_mode {

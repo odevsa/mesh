@@ -66,7 +66,7 @@ pub fn render_about_dialog(ctx: &Context, show_about: &mut bool, lang: Language)
         return;
     }
 
-    let icon_bytes = include_bytes!("../../assets/icons/128x128/apps/mesh.png");
+    let icon_bytes = include_bytes!("../../packaging/linux/assets/icons/hicolor/128x128/apps/mesh.png");
     let icon_image = image::load_from_memory(icon_bytes).ok().map(|img| {
         let rgba = img.to_rgba8();
         let size = [rgba.width() as usize, rgba.height() as usize];

@@ -62,10 +62,6 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @location
         }
     }
 
-    if (uniforms.material_mode == 2u) {
-        return vec4<f32>(base_color.rgb * 0.25, base_color.a);
-    }
-
     var n = normalize(in.normal);
     if (length(n) < 0.1) {
         n = vec3<f32>(0.0, 0.0, 1.0);
@@ -76,37 +72,35 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @location
 
     let v_dir = normalize(uniforms.camera_pos - in.world_pos);
 
-    // 1. Generous Hemisphere Ambient Light
-    // Soft skylight from +Z and gentle ground bounce from -Z
-    let hemi_factor = n.z * 0.5 + 0.5;
-    let ambient_sky = vec3<f32>(0.55, 0.55, 0.58);
-    let ambient_ground = vec3<f32>(0.40, 0.40, 0.42);
-    var ambient_light = mix(ambient_ground, ambient_sky, hemi_factor);
+    // Studio Key Light: uniform camera-relative direction computed once per frame
+    let key_dir = normalize(uniforms.light_dir);
 
-    // Incorporate user shadow_color if configured
-    if (length(uniforms.shadow_color.rgb) > 0.01) {
-        ambient_light = mix(ambient_light, uniforms.shadow_color.rgb * 0.75, 0.35);
-    }
-
-    // 2. Camera Headlight (ensures surfaces facing the camera are always well illuminated)
+    // 1. Directional Key Light + Headlight (powered by light_color)
     let ndotv = max(dot(n, v_dir), 0.0);
-    let headlight = ndotv * 0.35;
-
-    // 3. Key Light (slightly offset above/right of camera to give crisp 3D volume)
-    let key_dir = normalize(v_dir + vec3<f32>(0.25, 0.35, 0.20));
-    let key_diff = max(dot(n, key_dir), 0.0) * 0.45;
-
+    let ndotl = max(dot(n, key_dir), 0.0);
+    let key_diff = ndotl * 0.68;
+    let headlight = ndotv * 0.18;
     let direct_light = uniforms.light_color.rgb * (headlight + key_diff);
 
-    // 4. Specular Highlight
+    // 2. Shadow / Ambient Light (powered by shadow_color with baseline fallback)
+    let shadow_factor = 1.0 - ndotl * 0.70;
+    let hemi_factor = n.z * 0.5 + 0.5;
+    let base_ambient = mix(vec3<f32>(0.07, 0.07, 0.09), vec3<f32>(0.13, 0.13, 0.15), hemi_factor);
+    let shadow_len = clamp(length(uniforms.shadow_color.rgb), 0.0, 1.0);
+    let shadow_light = mix(base_ambient, uniforms.shadow_color.rgb, shadow_len * 0.85) + uniforms.shadow_color.rgb * 0.15;
+    let ambient_contrib = shadow_light * shadow_factor;
+
+    // 3. Soft Diffuse Specular (skin-like matte sheen lit by light_color)
     let half_dir = normalize(key_dir + v_dir);
-    let spec = pow(max(dot(n, half_dir), 0.0), 32.0) * 0.25;
+    let spec = pow(max(dot(n, half_dir), 0.0), 16.0) * 0.07;
+    let spec_light = uniforms.light_color.rgb * spec;
 
-    // 5. Subtle Rim Light (gives clean silhouettes from dark backgrounds)
-    let rim = pow(1.0 - ndotv, 3.5) * 0.18;
+    // 4. Subtle Rim Light (silhouette edge definition tinted by light_color)
+    let rim = pow(1.0 - ndotv, 4.0) * 0.06;
+    let rim_color = mix(uniforms.light_color.rgb, vec3<f32>(1.0), 0.3) * rim;
 
-    let total_light = ambient_light + direct_light + vec3<f32>(rim);
-    let final_rgb = clamp(base_color.rgb * total_light + uniforms.light_color.rgb * spec, vec3<f32>(0.0), vec3<f32>(1.0));
+    let total_light = direct_light + ambient_contrib + rim_color;
+    let final_rgb = clamp(base_color.rgb * total_light + spec_light, vec3<f32>(0.0), vec3<f32>(1.0));
 
     return vec4<f32>(final_rgb, base_color.a);
 }
@@ -134,3 +128,21 @@ fn vs_line(in: LineVertexInput) -> LineVertexOutput {
 fn fs_line(in: LineVertexOutput) -> @location(0) vec4<f32> {
     return in.color;
 }
+
+// Wireframe rendering
+@vertex
+fn vs_wireframe(in: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.world_pos = in.position;
+    out.clip_position = uniforms.view_proj * vec4<f32>(in.position, 1.0);
+    out.normal = in.normal;
+    out.uv = in.uv;
+    out.color = in.color;
+    return out;
+}
+
+@fragment
+fn fs_wireframe(in: VertexOutput) -> @location(0) vec4<f32> {
+    return uniforms.object_color;
+}
+

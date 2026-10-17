@@ -52,10 +52,53 @@ impl Default for Uniforms {
     }
 }
 
+pub fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn generate_wireframe_indices(indices: &[[u32; 3]]) -> Vec<u32> {
+    let mut edge_set = std::collections::HashSet::with_capacity(indices.len() * 3);
+    let mut line_indices = Vec::with_capacity(indices.len() * 3);
+    for tri in indices {
+        let edges = [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])];
+        for (a, b) in edges {
+            let key = if a < b { (a, b) } else { (b, a) };
+            if edge_set.insert(key) {
+                line_indices.push(a);
+                line_indices.push(b);
+            }
+        }
+    }
+    line_indices
+}
+
+fn generate_wireframe_indices_flat(flat_indices: &[u32]) -> Vec<u32> {
+    let mut edge_set = std::collections::HashSet::with_capacity(flat_indices.len());
+    let mut line_indices = Vec::with_capacity(flat_indices.len());
+    for chunk in flat_indices.chunks_exact(3) {
+        let (a, b, c) = (chunk[0], chunk[1], chunk[2]);
+        let edges = [(a, b), (b, c), (c, a)];
+        for (u, v) in edges {
+            let key = if u < v { (u, v) } else { (v, u) };
+            if edge_set.insert(key) {
+                line_indices.push(u);
+                line_indices.push(v);
+            }
+        }
+    }
+    line_indices
+}
+
 pub struct GpuSubMesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+    pub wireframe_index_buffer: wgpu::Buffer,
+    pub wireframe_index_count: u32,
     pub texture_bind_group: wgpu::BindGroup,
 }
 
@@ -63,6 +106,7 @@ pub struct SceneRenderer {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub render_pipeline: wgpu::RenderPipeline,
+    pub wireframe_pipeline: wgpu::RenderPipeline,
     pub line_pipeline: wgpu::RenderPipeline,
     pub uniform_buffer: wgpu::Buffer,
     pub uniform_bind_group: wgpu::BindGroup,
@@ -71,6 +115,8 @@ pub struct SceneRenderer {
     pub default_sampler: wgpu::Sampler,
 
     pub color_texture: Option<wgpu::Texture>,
+    pub color_render_view: Option<wgpu::TextureView>,
+    pub color_egui_view: Option<wgpu::TextureView>,
     pub color_view: Option<wgpu::TextureView>,
     pub depth_texture: Option<wgpu::Texture>,
     pub depth_view: Option<wgpu::TextureView>,
@@ -268,6 +314,72 @@ impl SceneRenderer {
             cache: None,
         });
 
+        // Pipeline for Wireframe
+        let wireframe_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Wireframe Render Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_wireframe"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 0,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 24,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                }],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_wireframe"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Self::DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
         // Pipeline for Lines (Grid & Axes)
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Line Pipeline Layout"),
@@ -336,6 +448,7 @@ impl SceneRenderer {
             device,
             queue,
             render_pipeline,
+            wireframe_pipeline,
             line_pipeline,
             uniform_buffer,
             uniform_bind_group,
@@ -343,6 +456,8 @@ impl SceneRenderer {
             default_texture_bind_group,
             default_sampler,
             color_texture: None,
+            color_render_view: None,
+            color_egui_view: None,
             color_view: None,
             depth_texture: None,
             depth_view: None,
@@ -427,10 +542,19 @@ impl SceneRenderer {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let wireframe_indices = generate_wireframe_indices_flat(&indices);
+        let wireframe_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Dummy Box Wireframe Index Buffer"),
+            contents: bytemuck::cast_slice(&wireframe_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         vec![GpuSubMesh {
             vertex_buffer,
             index_buffer,
             index_count: indices.len() as u32,
+            wireframe_index_buffer,
+            wireframe_index_count: wireframe_indices.len() as u32,
             texture_bind_group: default_tex.clone(),
         }]
     }
@@ -503,10 +627,19 @@ impl SceneRenderer {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let wireframe_indices = generate_wireframe_indices_flat(&indices);
+        let wireframe_index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Dummy Box Wireframe Index Buffer"),
+            contents: bytemuck::cast_slice(&wireframe_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         self.dummy_box_mesh = vec![GpuSubMesh {
             vertex_buffer,
             index_buffer,
             index_count: indices.len() as u32,
+            wireframe_index_buffer,
+            wireframe_index_count: wireframe_indices.len() as u32,
             texture_bind_group: self.default_texture_bind_group.clone(),
         }];
     }
@@ -537,11 +670,20 @@ impl SceneRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
         });
-        let color_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let color_render_view = color_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Scene Offscreen Color Srgb Render View"),
+            format: Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+            ..Default::default()
+        });
+        let color_egui_view = color_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Scene Offscreen Color Unorm Egui View"),
+            format: Some(wgpu::TextureFormat::Rgba8Unorm),
+            ..Default::default()
+        });
 
         let depth_texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Scene Depth Texture"),
@@ -562,21 +704,23 @@ impl SceneRenderer {
         if let Some(tex_id) = self.egui_texture_id {
             egui_renderer.update_egui_texture_from_wgpu_texture(
                 &self.device,
-                &color_view,
+                &color_egui_view,
                 wgpu::FilterMode::Linear,
                 tex_id,
             );
         } else {
             let tex_id = egui_renderer.register_native_texture(
                 &self.device,
-                &color_view,
+                &color_egui_view,
                 wgpu::FilterMode::Linear,
             );
             self.egui_texture_id = Some(tex_id);
         }
 
         self.color_texture = Some(color_texture);
-        self.color_view = Some(color_view);
+        self.color_render_view = Some(color_render_view.clone());
+        self.color_egui_view = Some(color_egui_view);
+        self.color_view = Some(color_render_view);
         self.depth_texture = Some(depth_texture);
         self.depth_view = Some(depth_view);
     }
@@ -661,7 +805,13 @@ impl SceneRenderer {
                     sub.normals.get(i).copied().unwrap_or([0.0, 0.0, 1.0])
                 };
                 let uv = sub.uvs.get(i).copied().unwrap_or([0.0, 0.0]);
-                let col = sub.color.unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                let col = if let Some(c) = sub.color {
+                    c
+                } else if sub.texture.is_some() {
+                    [1.0, 1.0, 1.0, 1.0]
+                } else {
+                    [0.0, 0.0, 0.0, 0.0]
+                };
 
                 vertices.push(Vertex {
                     position: [centered.x, centered.y, centered.z],
@@ -687,6 +837,13 @@ impl SceneRenderer {
             let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Submesh Index Buffer"),
                 contents: bytemuck::cast_slice(&flat_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+            let wireframe_indices = generate_wireframe_indices(&sub.indices);
+            let wireframe_index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Submesh Wireframe Index Buffer"),
+                contents: bytemuck::cast_slice(&wireframe_indices),
                 usage: wgpu::BufferUsages::INDEX,
             });
 
@@ -733,6 +890,8 @@ impl SceneRenderer {
                 vertex_buffer,
                 index_buffer,
                 index_count: flat_indices.len() as u32,
+                wireframe_index_buffer,
+                wireframe_index_count: wireframe_indices.len() as u32,
                 texture_bind_group,
             });
         }
@@ -749,6 +908,12 @@ impl SceneRenderer {
         color: [f32; 4],
         show_axes: [bool; 3],
     ) {
+        let color = [
+            srgb_to_linear(color[0]),
+            srgb_to_linear(color[1]),
+            srgb_to_linear(color[2]),
+            color[3],
+        ];
         let divisions = divisions.max(1);
         let step = (half_size * 2.0) / divisions as f32;
         let mut lines = Vec::new();
@@ -795,7 +960,12 @@ impl SceneRenderer {
 
         // X Axis (Red)
         if show_axes[0] {
-            let col = [246.0 / 255.0, 54.0 / 255.0, 82.0 / 255.0, 1.0];
+            let col = [
+                srgb_to_linear(246.0 / 255.0),
+                srgb_to_linear(54.0 / 255.0),
+                srgb_to_linear(82.0 / 255.0),
+                1.0,
+            ];
             lines.push(LineVertex { position: [-half_size, 0.0, 0.0], color: col });
             lines.push(LineVertex { position: [half_size, 0.0, 0.0], color: col });
             if show_axis_direction {
@@ -808,7 +978,12 @@ impl SceneRenderer {
 
         // Y Axis (Green)
         if show_axes[1] {
-            let col = [126.0 / 255.0, 194.0 / 255.0, 18.0 / 255.0, 1.0];
+            let col = [
+                srgb_to_linear(126.0 / 255.0),
+                srgb_to_linear(194.0 / 255.0),
+                srgb_to_linear(18.0 / 255.0),
+                1.0,
+            ];
             lines.push(LineVertex { position: [0.0, -half_size, 0.0], color: col });
             lines.push(LineVertex { position: [0.0, half_size, 0.0], color: col });
             if show_axis_direction {
@@ -821,7 +996,12 @@ impl SceneRenderer {
 
         // Z Axis (Blue)
         if show_axes[2] {
-            let col = [47.0 / 255.0, 131.0 / 255.0, 227.0 / 255.0, 1.0];
+            let col = [
+                srgb_to_linear(47.0 / 255.0),
+                srgb_to_linear(131.0 / 255.0),
+                srgb_to_linear(227.0 / 255.0),
+                1.0,
+            ];
             lines.push(LineVertex { position: [0.0, 0.0, -half_size], color: col });
             lines.push(LineVertex { position: [0.0, 0.0, half_size], color: col });
             if show_axis_direction {
@@ -853,7 +1033,7 @@ impl SceneRenderer {
         show_grid: bool,
         show_axes: bool,
     ) {
-        let (Some(color_view), Some(depth_view)) = (&self.color_view, &self.depth_view) else {
+        let (Some(color_view), Some(depth_view)) = (&self.color_render_view, &self.depth_view) else {
             return;
         };
 
@@ -862,6 +1042,13 @@ impl SceneRenderer {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Scene Command Encoder"),
         });
+
+        let clear_linear = [
+            srgb_to_linear(bg_color[0]),
+            srgb_to_linear(bg_color[1]),
+            srgb_to_linear(bg_color[2]),
+            bg_color[3],
+        ];
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -872,10 +1059,10 @@ impl SceneRenderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg_color[0] as f64,
-                            g: bg_color[1] as f64,
-                            b: bg_color[2] as f64,
-                            a: bg_color[3] as f64,
+                            r: clear_linear[0] as f64,
+                            g: clear_linear[1] as f64,
+                            b: clear_linear[2] as f64,
+                            a: clear_linear[3] as f64,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -903,14 +1090,30 @@ impl SceneRenderer {
             };
 
             if !submeshes_to_draw.is_empty() {
-                pass.set_pipeline(&self.render_pipeline);
-                pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                if uniforms.material_mode == 2 {
+                    // Wireframe mode: render lines with wireframe pipeline
+                    pass.set_pipeline(&self.wireframe_pipeline);
+                    pass.set_bind_group(0, &self.uniform_bind_group, &[]);
 
-                for sub in submeshes_to_draw {
-                    pass.set_bind_group(1, &sub.texture_bind_group, &[]);
-                    pass.set_vertex_buffer(0, sub.vertex_buffer.slice(..));
-                    pass.set_index_buffer(sub.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(0..sub.index_count, 0, 0..1);
+                    for sub in submeshes_to_draw {
+                        if sub.wireframe_index_count > 0 {
+                            pass.set_bind_group(1, &sub.texture_bind_group, &[]);
+                            pass.set_vertex_buffer(0, sub.vertex_buffer.slice(..));
+                            pass.set_index_buffer(sub.wireframe_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                            pass.draw_indexed(0..sub.wireframe_index_count, 0, 0..1);
+                        }
+                    }
+                } else {
+                    // Material or Solid mode: render filled triangles
+                    pass.set_pipeline(&self.render_pipeline);
+                    pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+
+                    for sub in submeshes_to_draw {
+                        pass.set_bind_group(1, &sub.texture_bind_group, &[]);
+                        pass.set_vertex_buffer(0, sub.vertex_buffer.slice(..));
+                        pass.set_index_buffer(sub.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..sub.index_count, 0, 0..1);
+                    }
                 }
             }
 
@@ -956,12 +1159,29 @@ mod tests {
             force_fallback_adapter: false,
         }));
         if let Ok(adapter) = adapter {
-            if let Ok((device, _)) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())) {
-                let _shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("Mesh and Line Shader Test"),
-                    source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-                });
+            if let Ok((device, queue)) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())) {
+                let _renderer = SceneRenderer::new(device, queue);
             }
         }
+    }
+
+    #[test]
+    fn test_wireframe_indices_deduplication() {
+        // Two triangles sharing edge (1, 2)
+        // Tri 1: (0, 1, 2) -> edges: (0, 1), (1, 2), (2, 0)
+        // Tri 2: (1, 3, 2) -> edges: (1, 3), (3, 2), (2, 1)
+        let indices = vec![[0, 1, 2], [1, 3, 2]];
+        let wireframe = generate_wireframe_indices(&indices);
+        // Total unique edges = 5 edges = 10 indices
+        assert_eq!(wireframe.len(), 10);
+    }
+
+    #[test]
+    fn test_srgb_to_linear() {
+        assert!((srgb_to_linear(0.0) - 0.0).abs() < 1e-5);
+        assert!((srgb_to_linear(1.0) - 1.0).abs() < 1e-5);
+        // 0.5 in sRGB is approximately 0.214 in linear
+        let lin = srgb_to_linear(0.5);
+        assert!(lin > 0.20 && lin < 0.23);
     }
 }

@@ -20,9 +20,9 @@ fn get_material_color(mat: &ufbx::Material) -> [f32; 4] {
     };
 
     [
-        r.clamp(0.0, 1.0).powf(1.0 / 2.2),
-        g.clamp(0.0, 1.0).powf(1.0 / 2.2),
-        b.clamp(0.0, 1.0).powf(1.0 / 2.2),
+        r.clamp(0.0, 1.0),
+        g.clamp(0.0, 1.0),
+        b.clamp(0.0, 1.0),
         a,
     ]
 }

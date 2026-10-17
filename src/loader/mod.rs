@@ -267,8 +267,8 @@ mod tests {
                     assert!(col[0] < 0.25 && col[1] < 0.25 && col[2] < 0.25, "Pupil should be dark #282828, got {:?}", col);
                     has_dark_pupil = true;
                 } else if sub.indices.len() == 552 {
-                    // 552 triangles is Eye! Must be off-white
-                    assert!(col[0] > 0.8 && col[1] > 0.7 && col[2] > 0.7, "Eye should be off-white #E7D6D6, got {:?}", col);
+                    // 552 triangles is Eye! Must be off-white (linear of #E7D6D6 is ~0.796)
+                    assert!(col[0] > 0.75 && col[1] > 0.65 && col[2] > 0.65, "Eye should be off-white #E7D6D6, got {:?}", col);
                     has_bright_eye = true;
                 }
             }

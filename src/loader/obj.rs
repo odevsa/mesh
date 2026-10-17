@@ -78,10 +78,10 @@ impl Loader for ObjLoader {
                                             let r: f32 = mparts.next().and_then(|s| s.parse().ok()).unwrap_or(0.8);
                                             let g: f32 = mparts.next().and_then(|s| s.parse().ok()).unwrap_or(0.8);
                                             let b: f32 = mparts.next().and_then(|s| s.parse().ok()).unwrap_or(0.8);
-                                            // Convert linear MTL Kd to sRGB color
-                                            let r = r.clamp(0.0, 1.0).powf(1.0 / 2.2);
-                                            let g = g.clamp(0.0, 1.0).powf(1.0 / 2.2);
-                                            let b = b.clamp(0.0, 1.0).powf(1.0 / 2.2);
+                                            // MTL Kd is linear diffuse color
+                                            let r = r.clamp(0.0, 1.0);
+                                            let g = g.clamp(0.0, 1.0);
+                                            let b = b.clamp(0.0, 1.0);
                                             mtl_colors.insert(cur_mat.clone(), [r, g, b, 1.0]);
                                         } else if (mkw.eq_ignore_ascii_case("map_Kd") || mkw.eq_ignore_ascii_case("map_Ka") || mkw.eq_ignore_ascii_case("map_BaseColor")) && !cur_mat.is_empty() {
                                             // Extract texture path, skipping options like -s, -o, -bm, -clamp, etc.

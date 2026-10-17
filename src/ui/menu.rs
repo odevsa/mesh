@@ -20,6 +20,7 @@ pub struct UiResponse {
     pub controls_changed: bool,
     pub dummy_box_changed: bool,
     pub materials_changed: bool,
+    pub projection_changed: bool,
     pub close_menu_requested: bool,
 }
 
@@ -166,6 +167,18 @@ pub fn render_context_menu(
                                     resp.obj_color_changed = true;
                                 }
                             });
+                            ui.horizontal(|ui| {
+                                ui.label(lang.t(TextKey::LightColor));
+                                if ui.color_edit_button_srgb(&mut cfg.light_color).changed() {
+                                    resp.config_changed = true;
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(lang.t(TextKey::ShadowColor));
+                                if ui.color_edit_button_srgb(&mut cfg.shadow_color).changed() {
+                                    resp.config_changed = true;
+                                }
+                            });
                         });
 
                         let r_controls = ui.collapsing(lang.t(TextKey::ControlsAndScale), |ui| {
@@ -216,6 +229,24 @@ pub fn render_context_menu(
                                 resp.controls_changed = true;
                             }
                             ui.horizontal(|ui| {
+                                ui.label(lang.t(TextKey::Projection));
+                                egui::ComboBox::from_id_salt("camera_projection")
+                                    .selected_text(match cfg.projection {
+                                        crate::config::Projection::Perspective => lang.t(TextKey::Perspective),
+                                        crate::config::Projection::Orthographic => lang.t(TextKey::Orthographic),
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        if ui.selectable_value(&mut cfg.projection, crate::config::Projection::Perspective, lang.t(TextKey::Perspective)).changed() {
+                                            resp.config_changed = true;
+                                            resp.projection_changed = true;
+                                        }
+                                        if ui.selectable_value(&mut cfg.projection, crate::config::Projection::Orthographic, lang.t(TextKey::Orthographic)).changed() {
+                                            resp.config_changed = true;
+                                            resp.projection_changed = true;
+                                        }
+                                    });
+                            });
+                            ui.horizontal(|ui| {
                                 ui.label(lang.t(TextKey::Language));
                                 egui::ComboBox::from_id_salt("app_language")
                                     .selected_text(cfg.language.display_name(lang))
@@ -243,6 +274,20 @@ pub fn render_context_menu(
 
                         if menu_button(ui, lang.t(TextKey::ResetCamera)).clicked() {
                             resp.reset_camera_requested = true;
+                            resp.close_menu_requested = true;
+                        }
+
+                        let proj_label = match cfg.projection {
+                            crate::config::Projection::Perspective => format!("{} (5)", lang.t(TextKey::Orthographic)),
+                            crate::config::Projection::Orthographic => format!("{} (5)", lang.t(TextKey::Perspective)),
+                        };
+                        if menu_button(ui, &proj_label).clicked() {
+                            cfg.projection = match cfg.projection {
+                                crate::config::Projection::Perspective => crate::config::Projection::Orthographic,
+                                crate::config::Projection::Orthographic => crate::config::Projection::Perspective,
+                            };
+                            resp.config_changed = true;
+                            resp.projection_changed = true;
                             resp.close_menu_requested = true;
                         }
 

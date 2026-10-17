@@ -6,7 +6,7 @@ fn main() {
         let mut res = winres::WindowsResource::new();
         
         let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-        let icon_path = manifest_dir.join("assets").join("mesh.ico");
+        let icon_path = manifest_dir.join("packaging/windows/assets/mesh.ico");
         
         res.set("ProductName", "Mesh 3D Viewer");
         res.set("FileDescription", "Fast 3D Mesh & G-code Viewer");

@@ -12,41 +12,33 @@ env:
   APP_NAME: mesh
 
 jobs:
-  build:
+  build-macos:
     name: macOS (${{ matrix.arch }})
     runs-on: macos-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: aarch64-apple-darwin
-            arch: arm64
-          - target: x86_64-apple-darwin
-            arch: x86_64
+          - arch: arm64
+            target: aarch64-apple-darwin
+          - arch: x86_64
+            target: x86_64-apple-darwin
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
 
       - name: Extract Version
         id: get_version
         run: |
-          if [[ "${{ github.ref }}" =~ ^refs/tags/ ]]; then
-            TAG="${{ github.ref }}"
-            TAG="${TAG#refs/tags/}"
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+          elif [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
             VERSION="${TAG#v}"
           else
-            VERSION=$(grep '^version =' Cargo.toml | head -n1 | cut -d '"' -f 2)
+            VERSION=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
@@ -58,65 +50,63 @@ jobs:
           APP_NAME="${{ env.APP_NAME }}"
           echo "DMG_NAME=${APP_NAME}-${VERSION}-macos-${ARCH}.dmg" >> $GITHUB_OUTPUT
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Generate macOS Icon (.icns)
+      - name: Generate icons
         run: |
-          mkdir -p mesh.iconset
-          cp assets/icons/16x16/apps/mesh.png mesh.iconset/icon_16x16.png
-          cp assets/icons/32x32/apps/mesh.png mesh.iconset/icon_16x16@2x.png
-          cp assets/icons/32x32/apps/mesh.png mesh.iconset/icon_32x32.png
-          cp assets/icons/64x64/apps/mesh.png mesh.iconset/icon_32x32@2x.png
-          cp assets/icons/128x128/apps/mesh.png mesh.iconset/icon_128x128.png
-          cp assets/icons/256x256/apps/mesh.png mesh.iconset/icon_128x128@2x.png
-          cp assets/icons/256x256/apps/mesh.png mesh.iconset/icon_256x256.png
-          cp assets/icons/512x512/apps/mesh.png mesh.iconset/icon_256x256@2x.png
-          cp assets/icons/512x512/apps/mesh.png mesh.iconset/icon_512x512.png
-          iconutil -c icns mesh.iconset -o assets/mesh.icns
-          rm -rf mesh.iconset
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install imagemagick
+          chmod +x packaging/scripts/generate-icons.sh packaging/scripts/make_icns.py
+          ./packaging/scripts/generate-icons.sh
 
-      - name: Package macOS DMG
+      - name: Package Mesh.app & DMG
         run: |
           VERSION="${{ steps.get_version.outputs.VERSION }}"
-          APP_NAME="${{ env.APP_NAME }}"
-          ARCH="${{ matrix.arch }}"
-          BINARY_PATH="target/${{ matrix.target }}/release/${APP_NAME}"
+          STAGING="dist/macos-staging"
+          APP_DIR="${STAGING}/Mesh.app"
+          OUTPUT_DMG="dist/${{ steps.names.outputs.DMG_NAME }}"
 
-          APP_DIR="Mesh.app"
-          rm -rf "$APP_DIR"
-          mkdir -p "$APP_DIR/Contents/MacOS"
-          mkdir -p "$APP_DIR/Contents/Resources"
+          mkdir -p dist
+          mkdir -p "${APP_DIR}/Contents/MacOS"
+          mkdir -p "${APP_DIR}/Contents/Resources"
 
-          cp "$BINARY_PATH" "$APP_DIR/Contents/MacOS/${APP_NAME}"
-          chmod +x "$APP_DIR/Contents/MacOS/${APP_NAME}"
-          cp assets/mesh.icns "$APP_DIR/Contents/Resources/mesh.icns"
-          sed -e "s/__VERSION__/${VERSION}/g" assets/Info.plist > "$APP_DIR/Contents/Info.plist"
+          install -m 755 "target/${{ matrix.target }}/release/mesh" "${APP_DIR}/Contents/MacOS/mesh"
+          install -m 644 packaging/macos/assets/mesh.icns "${APP_DIR}/Contents/Resources/mesh.icns"
 
-          # Ad-hoc sign the app bundle for macOS ARM64 / Apple Silicon compatibility
-          codesign --force --deep --sign - "$APP_DIR"
+          sed "s/VERSION_PLACEHOLDER/${VERSION}/g" packaging/macos/Info.plist > "${APP_DIR}/Contents/Info.plist"
+          echo -n "APPL????" > "${APP_DIR}/Contents/PkgInfo"
 
-          DMG_STAGE="dmg_stage_${ARCH}"
-          rm -rf "$DMG_STAGE"
-          mkdir -p "$DMG_STAGE"
-          cp -r "$APP_DIR" "$DMG_STAGE/Mesh.app"
-          ln -s /Applications "$DMG_STAGE/Applications"
+          codesign --force --deep --sign - "${APP_DIR}"
 
-          hdiutil create -volname "Mesh" -srcfolder "$DMG_STAGE" -ov -format UDZO "${{ steps.names.outputs.DMG_NAME }}"
-          rm -rf "$DMG_STAGE" "$APP_DIR" assets/mesh.icns
+          ln -sf /Applications "${STAGING}/Applications"
 
-      - name: Upload Artifacts (Local or CI)
+          hdiutil create \
+            -volname "Mesh" \
+            -srcfolder "${STAGING}" \
+            -ov \
+            -format UDZO \
+            "${OUTPUT_DMG}"
+
+          rm -rf "${STAGING}"
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}
-          path: |
-            ${{ steps.names.outputs.DMG_NAME }}
+          name: mesh-macos-${{ matrix.arch }}
+          path: dist/*.dmg
 
-      - name: Publish to GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
-        with:
-          files: |
-            ${{ steps.names.outputs.DMG_NAME }}
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          gh release upload "${TAG}" dist/*.dmg --clobber

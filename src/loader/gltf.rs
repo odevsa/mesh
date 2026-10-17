@@ -84,9 +84,9 @@ impl Loader for GltfLoader {
                     let pbr = mat.pbr_metallic_roughness();
                     let base_raw = pbr.base_color_factor();
                     let color = Some([
-                        base_raw[0].clamp(0.0, 1.0).powf(1.0 / 2.2),
-                        base_raw[1].clamp(0.0, 1.0).powf(1.0 / 2.2),
-                        base_raw[2].clamp(0.0, 1.0).powf(1.0 / 2.2),
+                        base_raw[0].clamp(0.0, 1.0),
+                        base_raw[1].clamp(0.0, 1.0),
+                        base_raw[2].clamp(0.0, 1.0),
                         base_raw[3],
                     ]);
                     let texture = pbr.base_color_texture().and_then(|t| {

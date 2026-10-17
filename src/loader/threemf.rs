@@ -8,14 +8,14 @@ pub struct ThreemfLoader {}
 fn parse_hex_color(s: &str) -> Option<[f32; 4]> {
     let s = s.trim().trim_start_matches('#');
     let (r, g, b, a) = if s.len() == 6 {
-        let r = u8::from_str_radix(&s[0..2], 16).ok()? as f32 / 255.0;
-        let g = u8::from_str_radix(&s[2..4], 16).ok()? as f32 / 255.0;
-        let b = u8::from_str_radix(&s[4..6], 16).ok()? as f32 / 255.0;
+        let r = crate::render::renderer::srgb_to_linear(u8::from_str_radix(&s[0..2], 16).ok()? as f32 / 255.0);
+        let g = crate::render::renderer::srgb_to_linear(u8::from_str_radix(&s[2..4], 16).ok()? as f32 / 255.0);
+        let b = crate::render::renderer::srgb_to_linear(u8::from_str_radix(&s[4..6], 16).ok()? as f32 / 255.0);
         (r, g, b, 1.0)
     } else if s.len() == 8 {
-        let r = u8::from_str_radix(&s[0..2], 16).ok()? as f32 / 255.0;
-        let g = u8::from_str_radix(&s[2..4], 16).ok()? as f32 / 255.0;
-        let b = u8::from_str_radix(&s[4..6], 16).ok()? as f32 / 255.0;
+        let r = crate::render::renderer::srgb_to_linear(u8::from_str_radix(&s[0..2], 16).ok()? as f32 / 255.0);
+        let g = crate::render::renderer::srgb_to_linear(u8::from_str_radix(&s[2..4], 16).ok()? as f32 / 255.0);
+        let b = crate::render::renderer::srgb_to_linear(u8::from_str_radix(&s[4..6], 16).ok()? as f32 / 255.0);
         let a = u8::from_str_radix(&s[6..8], 16).ok()? as f32 / 255.0;
         (r, g, b, a)
     } else {

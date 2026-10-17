@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/icons/128x128/apps/mesh.png" alt="Mesh Logo" width="100" />
+<img src="assets/mesh.svg" alt="Mesh Logo" width="100" />
 
 **Mesh**
 
@@ -31,13 +31,22 @@
 
 ## Features
 
-- **Lightweight & Fast**: Built with Rust for quick startup and low memory usage.
-- **Multiple Formats**: Supports `.stl`, `.3mf`, `.obj`, `.gltf` / `.glb`, and `.fbx` files.
-- **Intuitive Camera**: Orbit and zoom around models with smooth mouse and keyboard controls.
-- **Customizable Appearance**: Adjust background, mesh colors, lighting, and shadow settings.
-- **Reference Grid & Axes**: Configurable ground grid and coordinate axes to help with orientation.
-- **Remembers Settings**: Your visual preferences are automatically saved between sessions.
-- **Portable**: Single standalone binary with no installation needed.
+- **Lightweight & Fast**: Built in Rust with low memory footprint and instant startup.
+- **Comprehensive 3D Format Support**:
+  - **STL**: Binary and ASCII.
+  - **3MF**: Modern additive manufacturing format with full vertex colors, submeshes, and material parsing.
+  - **Wavefront OBJ**: Geometry with materials (`.mtl`) and relative texture map resolution.
+  - **glTF / GLB**: Both embedded binary and external reference/buffer files.
+  - **Autodesk FBX**: Binary and ASCII geometry with relative texture loading.
+- **Advanced Lighting & Shading**:
+  - Realistic multi-source lighting combining hemisphere ambient, directional key light, and camera headlight.
+  - Interactive light and shadow color customization in real-time.
+  - Wireframe overlay mode with depth preservation.
+- **Internationalization (i18n)**: Multi-language interface with automatic system language detection and manual switching.
+- **Intuitive Camera Controls**: Orbit, pan, and zoom with smooth momentum damping.
+- **Reference Grid & Coordinate Axes**: Configurable ground grid and 3D orientation gizmo.
+- **Persistent Preferences**: Visual settings, colors, and camera configurations are automatically saved between sessions.
+- **Multi-Platform**: Native packages, and zero external runtime dependencies.
 
 ## Screenshots
 
@@ -50,25 +59,25 @@
 
 ## Formats
 
-| Format            |    Extension    | Description                                          |
-| :---------------- | :-------------: | :--------------------------------------------------- |
-| **STL**           |     `.stl`      | Standard Stereolithography format (Binary and ASCII) |
-| **3MF**           |     `.3mf`      | 3D Manufacturing Format used in modern 3D printing   |
-| **Wavefront OBJ** |     `.obj`      | Classic 3D geometry format                           |
-| **glTF / GLB**    | `.gltf`, `.glb` | GL Transmission Format (standard and binary)         |
-| **Autodesk FBX**  |     `.fbx`      | Filmbox 3D asset exchange format (Binary and ASCII)  |
+| Format            |    Extension    | Capabilities & Support                                                    |
+| :---------------- | :-------------: | :------------------------------------------------------------------------ |
+| **STL**           |     `.stl`      | Standard Stereolithography format (Binary and ASCII)                      |
+| **3MF**           |     `.3mf`      | 3D Manufacturing Format with vertex color mapping and multi-submesh trees |
+| **Wavefront OBJ** |     `.obj`      | Polygonal mesh geometry, MTL materials, and relative texture paths        |
+| **glTF / GLB**    | `.gltf`, `.glb` | GL Transmission Format (embedded GLB, external GLTF buffers and images)   |
+| **Autodesk FBX**  |     `.fbx`      | Filmbox exchange format (Binary & ASCII) with relative texture resolution |
 
 ## Installation
 
-Mesh is completely portable and requires **no installation**:
+Mesh is distributed as both native installers and standalone portable binaries:
 
-Download the latest version for your platform from the **[Releases](https://github.com/odevsa/mesh/releases)** page:
+Download the latest release for your operating system from the **[Releases](https://github.com/odevsa/mesh/releases)** page:
 
 ### Linux
 
-Choose your preferred format:
+Choose your preferred package format:
 
-- **AppImage** (recommended):
+- **AppImage** (universal, self-contained):
   ```bash
   chmod +x mesh-*-linux-x86_64.AppImage
   ./mesh-*-linux-x86_64.AppImage
@@ -77,21 +86,22 @@ Choose your preferred format:
   ```bash
   sudo dpkg -i mesh-*-linux-x86_64.deb
   ```
-- **Tarball** (`.tar.xz`): Extract and run the `mesh` binary directly.
+- **Portable Tarball** (`.tar.xz`): Extract and run the standalone `mesh` binary directly.
 
-### Mac
+### macOS
 
-- Download `mesh-*-macos-arm64.dmg` (Apple Silicon) or `mesh-*-macos-x86_64.dmg` (Intel), open it and drag `Mesh.app` to your Applications folder.
+- Download `mesh-*-macos-arm64.dmg` (Apple Silicon) or `mesh-*-macos-x86_64.dmg` (Intel).
+- Open the `.dmg` disk image and drag **Mesh.app** to your `/Applications` directory.
 
 ### Windows
 
-- Download `mesh-*-windows-x86_64.exe` (or `mesh-*-windows-arm64.exe`) and double-click to run!
+- Download `mesh-*-windows-x86_64.exe` (or `mesh-*-windows-arm64.exe`) installer and follow the setup wizard.
 
 ## Usage
 
 ### From GUI
 
-Simply launch `Mesh` and **double-click** anywhere or **right-click** and select **"Load 3D Model"**.
+Launch `Mesh` and **double-click** anywhere or **right-click** to open the context menu and select **"Load 3D Model"** (or use drag-and-drop).
 
 | Action                      | Shortcut / Gesture                                         |
 | :-------------------------- | :--------------------------------------------------------- |
@@ -105,35 +115,37 @@ Simply launch `Mesh` and **double-click** anywhere or **right-click** and select
 
 ### From Command Line
 
-You can pass the path to any supported 3D model directly:
+Pass the path to any supported 3D model directly:
 
 ```bash
-# Linux and Mac
-./mesh /path/to/my_model.stl
+# Linux and macOS
+./mesh /path/to/model.stl
 
 # Windows
-mesh.exe C:\models\sample.3mf
+mesh.exe C:\models\model.3mf
 ```
 
-## Building
+## Development & Building
 
-### Prerequisites
+Tasks are managed using [`just`](https://github.com/casey/just) (a modern command runner written in Rust). A backward-compatible `Makefile` wrapper forwarding to `just` is also included.
 
-- latest stable Rust toolchain
+| Command              | Description                                                         |
+| :------------------- | :------------------------------------------------------------------ |
+| `just dev`           | Run application in development mode (`cargo run`)                   |
+| `just dev-demo`      | Run application previewing sample asset (`Suzanne.glb`)             |
+| `just check`         | Run compiler checks across the codebase (`cargo check`)             |
+| `just test`          | Run all unit and integration tests (`cargo test`)                   |
+| `just lint`          | Validate code formatting and clippy rules                           |
+| `just format`        | Auto-format Rust source files (`cargo fmt`)                         |
+| `just build`         | Build optimized release binary for host platform into `dist/linux/` |
+| `just build-linux`   | Build release binary for Linux                                      |
+| `just build-windows` | Cross-compile Windows binary using MinGW GNU toolchain              |
+| `just build-macos`   | Compile release binary and generate macOS application bundle        |
+| `just icons`         | Regenerate all OS icon assets from `assets/mesh.svg`                |
+| `just version <V>`   | Synchronize semantic version across manifests (e.g. `0.2.0`)        |
+| `just release [os]`  | Test GitHub Actions release workflows locally using `act`           |
 
-### Compilation
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/odevsa/mesh.git
-cd mesh
-
-# 2. Build in release mode
-cargo build --release
-
-# 3. Run the compiled binary
-./target/release/mesh [model-path]
-```
+> **Note**: You can also use standard `make <target>` commands (e.g., `make dev`, `make test`, `make build`, `make icons`) or standard `cargo build --release`.
 
 ## Contributing
 

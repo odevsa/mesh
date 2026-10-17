@@ -23,7 +23,17 @@ pub enum MaterialMode {
     Wireframe,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Projection {
+    #[default]
+    Perspective,
+    Orthographic,
+}
+
 use crate::i18n::Language;
+
+use glam::Vec3;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
@@ -32,7 +42,7 @@ pub struct Config {
     pub light_color: [u8; 3],
     pub shadow_color: [u8; 3],
     pub object_scale: f32,
-    pub camera_eye: [f32; 3],
+    pub camera_eye: [f64; 3],
     pub smooth_orbit: bool,
     pub scroll_speed: f32,
     pub invert_scroll: bool,
@@ -48,6 +58,8 @@ pub struct Config {
     pub show_dummy_box: bool,
     pub show_dimensions: bool,
     pub material_mode: MaterialMode,
+    #[serde(default)]
+    pub projection: Projection,
     pub language: Language,
 }
 
@@ -59,7 +71,7 @@ impl Default for Config {
             light_color: [0xCC, 0xCC, 0xCC],
             shadow_color: [0x00, 0x00, 0x00],
             object_scale: 1.0,
-            camera_eye: [-1.0, -1.0, 1.0],
+            camera_eye: [-1.0, -1.0, 0.8165], // Z: 1.4142(3 STEPS), 0.8165(2 STEPS)
             smooth_orbit: true,
             scroll_speed: 0.05,
             invert_scroll: false,
@@ -75,12 +87,21 @@ impl Default for Config {
             show_dummy_box: false,
             show_dimensions: true,
             material_mode: MaterialMode::Material,
+            projection: Projection::Orthographic,
             language: Language::Auto,
         }
     }
 }
 
 impl Config {
+    pub fn camera_eye_vec(&self) -> Vec3 {
+        Vec3::new(
+            self.camera_eye[0] as f32,
+            self.camera_eye[1] as f32,
+            self.camera_eye[2] as f32,
+        )
+    }
+
     pub fn path() -> Option<PathBuf> {
         if let Some(proj) = ProjectDirs::from("com", "mesh", "mesh") {
             let cfg_dir = proj.config_dir();
@@ -134,5 +155,27 @@ impl Config {
         let s = serde_json::to_string_pretty(self).map_err(|e| format!("serialize cfg: {}", e))?;
         std::fs::write(&p, s).map_err(|e| format!("write cfg: {}", e))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_camera_eye_clean_serialization() {
+        let cfg = Config::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("0.8165"));
+        assert!(!json.contains("0.81599998"));
+    }
+
+    #[test]
+    fn test_config_camera_eye_vec() {
+        let cfg = Config::default();
+        let vec = cfg.camera_eye_vec();
+        assert!((vec.x - (-1.0)).abs() < 1e-5);
+        assert!((vec.y - (-1.0)).abs() < 1e-5);
+        assert!((vec.z - 0.8165).abs() < 1e-4);
     }
 }
