@@ -64,8 +64,8 @@ jobs:
       - name: Generate icons
         run: |
           HOMEBREW_NO_AUTO_UPDATE=1 brew install imagemagick
-          chmod +x packaging/scripts/generate-icons.sh packaging/scripts/make_icns.py
-          ./packaging/scripts/generate-icons.sh
+          chmod +x packaging/scripts/generate-icons.sh
+          ./packaging/scripts/generate-icons.sh --macos
 
       - name: Package Mesh.app & DMG
         run: |

@@ -96,9 +96,9 @@ build-all: build-linux build-windows
 # Maintenance & Utilities
 # ==============================================================================
 
-# Generate application icon assets (PNG, ICO, ICNS) from source SVG
-icons:
-    ./packaging/scripts/generate-icons.sh
+# Generate application icon assets (target: all, linux, macos, or windows)
+icons target="all":
+    ./packaging/scripts/generate-icons.sh --{{target}}
 
 # Remove build artifacts and temporary compilation directories
 clean:

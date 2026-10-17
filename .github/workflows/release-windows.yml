@@ -66,6 +66,12 @@ jobs:
           choco install nsis -y
           echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
 
+      - name: Generate icons
+        shell: bash
+        run: |
+          chmod +x packaging/scripts/generate-icons.sh
+          ./packaging/scripts/generate-icons.sh --windows
+
       - name: Build release binary
         shell: bash
         run: cargo build --release --target ${{ matrix.target }}

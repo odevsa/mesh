@@ -78,8 +78,8 @@ jobs:
 
       - name: Generate icons
         run: |
-          chmod +x packaging/scripts/generate-icons.sh packaging/scripts/make_icns.py
-          ./packaging/scripts/generate-icons.sh
+          chmod +x packaging/scripts/generate-icons.sh
+          ./packaging/scripts/generate-icons.sh --linux
 
       - name: Package DEB, Tar.xz & AppImage
         run: |
