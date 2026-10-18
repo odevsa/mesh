@@ -117,6 +117,7 @@ fn parse_collada(xml: &str, base_dir: &Path) -> Result<MeshData, String> {
     let mut cur_image_id = String::new();
     let mut cur_newparam_sid = String::new();
     let mut param_to_source: HashMap<String, String> = HashMap::new();
+    let animations: Vec<crate::loader::AnimationClip> = Vec::new();
 
     let mut buf = Vec::new();
 
@@ -611,6 +612,7 @@ fn parse_collada(xml: &str, base_dir: &Path) -> Result<MeshData, String> {
                 indices,
                 color: mat_color,
                 texture: mat_texture,
+                ..Default::default()
             });
         }
     }
@@ -635,6 +637,8 @@ fn parse_collada(xml: &str, base_dir: &Path) -> Result<MeshData, String> {
         }
     }
 
+    let has_animation = !animations.is_empty();
+
     Ok(MeshData {
         positions: all_positions,
         normals: all_normals,
@@ -642,7 +646,9 @@ fn parse_collada(xml: &str, base_dir: &Path) -> Result<MeshData, String> {
         indices: all_indices,
         submeshes,
         source_path: None,
-        has_animation: true,
+        has_animation,
+        animations,
+        ..Default::default()
     })
 }
 
@@ -658,6 +664,7 @@ fn export_collada(path: &Path, mesh: &MeshData) -> Result<(), String> {
             indices: mesh.indices.clone(),
             color: None,
             texture: None,
+            ..Default::default()
         }];
         &fallback_submesh
     } else {

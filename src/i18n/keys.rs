@@ -53,4 +53,11 @@ pub enum TextKey {
     SupportedFormats,
     WindowLoadingTitle,
     WindowTitle,
+    Animation,
+    Play,
+    Pause,
+    Stop,
+    Clip,
+    Speed,
+    Loop,
 }

@@ -54,5 +54,12 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::SupportedFormats => "支持的格式",
         TextKey::WindowLoadingTitle => "Mesh - 加载中...",
         TextKey::WindowTitle => "Mesh",
+        TextKey::Animation => "动画",
+        TextKey::Play => "播放",
+        TextKey::Pause => "暂停",
+        TextKey::Stop => "停止",
+        TextKey::Clip => "片段:",
+        TextKey::Speed => "速度:",
+        TextKey::Loop => "循环",
     }
 }

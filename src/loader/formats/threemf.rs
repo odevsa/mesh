@@ -458,6 +458,7 @@ impl Loader for ThreemfLoader {
                 indices: mesh.indices.clone(),
                 color: None,
                 texture: None,
+                ..Default::default()
             }];
             &fallback_submesh
         } else {

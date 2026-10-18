@@ -238,6 +238,7 @@ impl Loader for ObjLoader {
                     indices: sub_indices,
                     color,
                     texture,
+                    ..Default::default()
                 });
             }
         }
@@ -257,6 +258,7 @@ impl Loader for ObjLoader {
                 indices: default_indices.clone(),
                 color: None,
                 texture: None,
+                ..Default::default()
             });
             global_positions = raw_positions;
             global_normals = raw_normals;

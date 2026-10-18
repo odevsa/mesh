@@ -54,5 +54,12 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::SupportedFormats => "対応フォーマット",
         TextKey::WindowLoadingTitle => "Mesh - 読み込み中...",
         TextKey::WindowTitle => "Mesh",
+        TextKey::Animation => "アニメーション",
+        TextKey::Play => "再生",
+        TextKey::Pause => "一時停止",
+        TextKey::Stop => "停止",
+        TextKey::Clip => "クリップ:",
+        TextKey::Speed => "速度:",
+        TextKey::Loop => "ループ",
     }
 }

@@ -1,3 +1,4 @@
+use super::animation::{AnimationClip, SceneNode, Skin};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,12 +12,28 @@ pub struct TextureData {
 #[derive(Debug, Clone, Default)]
 pub struct SubMesh {
     pub positions: Vec<[f32; 3]>,
+    pub rest_positions: Vec<[f32; 3]>,
     #[allow(dead_code)]
     pub normals: Vec<[f32; 3]>,
+    pub rest_normals: Vec<[f32; 3]>,
     pub uvs: Vec<[f32; 2]>,
     pub indices: Vec<[u32; 3]>,
     pub color: Option<[f32; 4]>,
     pub texture: Option<Arc<TextureData>>,
+    pub joint_indices: Option<Vec<[u16; 4]>>,
+    pub joint_weights: Option<Vec<[f32; 4]>>,
+    pub node_index: Option<usize>,
+}
+
+impl SubMesh {
+    pub fn ensure_rest_geometry(&mut self) {
+        if self.rest_positions.is_empty() && !self.positions.is_empty() {
+            self.rest_positions = self.positions.clone();
+        }
+        if self.rest_normals.is_empty() && !self.normals.is_empty() {
+            self.rest_normals = self.normals.clone();
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -30,6 +47,18 @@ pub struct MeshData {
     pub submeshes: Vec<SubMesh>,
     pub source_path: Option<PathBuf>,
     pub has_animation: bool,
+    pub is_y_up: bool,
+    pub nodes: Vec<SceneNode>,
+    pub skins: Vec<Skin>,
+    pub animations: Vec<AnimationClip>,
+}
+
+impl MeshData {
+    pub fn ensure_rest_geometry(&mut self) {
+        for sub in &mut self.submeshes {
+            sub.ensure_rest_geometry();
+        }
+    }
 }
 
 #[allow(dead_code)]

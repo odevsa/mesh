@@ -1,4 +1,7 @@
-use crate::loader::{compute_normals, FileFormatInfo, Loader, MeshData, SubMesh, TextureData};
+use crate::loader::{
+    compute_normals, AnimationChannel, AnimationClip, FileFormatInfo, Interpolation, Joint, Loader,
+    MeshData, SceneNode, Skin, SubMesh, TargetProperty, TextureData,
+};
 use std::path::Path;
 use std::io::Read;
 use std::sync::Arc;
@@ -89,6 +92,7 @@ impl Loader for GltfLoader {
 
                 fn process_primitive(
                     prim: &gltf::Primitive,
+                    node_index: usize,
                     world_transform: Mat4,
                     buffers: &[gltf::buffer::Data],
                     loaded_images: &[Arc<TextureData>],
@@ -113,13 +117,16 @@ impl Loader for GltfLoader {
                     });
 
                     let mut sub_positions = Vec::new();
+                    let mut sub_rest_positions = Vec::new();
                     let mut sub_normals = Vec::new();
+                    let mut sub_rest_normals = Vec::new();
                     let mut sub_uvs = Vec::new();
                     let mut sub_indices = Vec::new();
 
                     let r = prim.reader(|buffer| Some(&buffers[buffer.index()]));
                     if let Some(iter) = r.read_positions() {
                         for p in iter {
+                            sub_rest_positions.push([p[0], p[1], p[2]]);
                             let p_gltf = world_transform.transform_point3(Vec3::new(p[0], p[1], p[2]));
                             // Convert glTF (+Y up, +Z out) to Mesh viewer (+Z up, -Y front)
                             let pos = [p_gltf.x, -p_gltf.z, p_gltf.y];
@@ -130,6 +137,7 @@ impl Loader for GltfLoader {
                     if let Some(iter) = r.read_normals() {
                         let normal_mat = world_transform.inverse().transpose();
                         for n in iter {
+                            sub_rest_normals.push([n[0], n[1], n[2]]);
                             let n_gltf = normal_mat.transform_vector3(Vec3::new(n[0], n[1], n[2])).normalize_or_zero();
                             let norm = [n_gltf.x, -n_gltf.z, n_gltf.y];
                             sub_normals.push(norm);
@@ -168,13 +176,25 @@ impl Loader for GltfLoader {
                         }
                     }
 
+                    let joint_indices: Option<Vec<[u16; 4]>> = r.read_joints(0).map(|iter| {
+                        iter.into_u16().collect()
+                    });
+                    let joint_weights: Option<Vec<[f32; 4]>> = r.read_weights(0).map(|iter| {
+                        iter.into_f32().collect()
+                    });
+
                     submeshes.push(SubMesh {
                         positions: sub_positions,
+                        rest_positions: sub_rest_positions,
                         normals: sub_normals,
+                        rest_normals: sub_rest_normals,
                         uvs: sub_uvs,
                         indices: sub_indices,
                         color,
                         texture,
+                        joint_indices,
+                        joint_weights,
+                        node_index: Some(node_index),
                     });
                 }
 
@@ -196,6 +216,7 @@ impl Loader for GltfLoader {
                         for prim in mesh.primitives() {
                             process_primitive(
                                 &prim,
+                                node.index(),
                                 world_transform,
                                 buffers,
                                 loaded_images,
@@ -243,6 +264,7 @@ impl Loader for GltfLoader {
                         for prim in mesh.primitives() {
                             process_primitive(
                                 &prim,
+                                0,
                                 Mat4::IDENTITY,
                                 &buffers,
                                 &loaded_images,
@@ -256,13 +278,128 @@ impl Loader for GltfLoader {
                     }
                 }
 
+                // Extract scene nodes hierarchy
+                let mut nodes = Vec::new();
+                for node in gltf_doc.nodes() {
+                    let (t, r, s) = node.transform().decomposed();
+                    nodes.push(SceneNode {
+                        name: node.name().unwrap_or("").to_string(),
+                        parent: None,
+                        children: node.children().map(|c| c.index()).collect(),
+                        initial_translation: [t[0], t[1], t[2]],
+                        initial_rotation: [r[0], r[1], r[2], r[3]],
+                        initial_scale: [s[0], s[1], s[2]],
+                        mesh_index: node.mesh().map(|m| m.index()),
+                    });
+                }
+                for i in 0..nodes.len() {
+                    let chs = nodes[i].children.clone();
+                    for ch in chs {
+                        if ch < nodes.len() {
+                            nodes[ch].parent = Some(i);
+                        }
+                    }
+                }
+
+                // Extract skins & inverse bind matrices
+                let mut skins = Vec::new();
+                for skin in gltf_doc.skins() {
+                    let name = skin.name().unwrap_or("").to_string();
+                    let r = skin.reader(|buffer| Some(&buffers[buffer.index()]));
+                    let inv_bind_matrices: Vec<[[f32; 4]; 4]> = r
+                        .read_inverse_bind_matrices()
+                        .map(|iter| iter.collect())
+                        .unwrap_or_default();
+                    let mut joints = Vec::new();
+                    for (i, j_node) in skin.joints().enumerate() {
+                        let inv_bind = inv_bind_matrices
+                            .get(i)
+                            .copied()
+                            .unwrap_or(Mat4::IDENTITY.to_cols_array_2d());
+                        joints.push(Joint {
+                            node_index: j_node.index(),
+                            inverse_bind_matrix: inv_bind,
+                        });
+                    }
+                    skins.push(Skin { name, joints });
+                }
+
+                // Extract animation clips & channels
+                let mut animations = Vec::new();
+                for anim in gltf_doc.animations() {
+                    let name = anim.name().unwrap_or("Animation").to_string();
+                    let mut channels = Vec::new();
+                    let mut max_time: f32 = 0.0;
+
+                    for ch in anim.channels() {
+                        let target_node = ch.target().node().index();
+                        let property = match ch.target().property() {
+                            gltf::animation::Property::Translation => TargetProperty::Translation,
+                            gltf::animation::Property::Rotation => TargetProperty::Rotation,
+                            gltf::animation::Property::Scale => TargetProperty::Scale,
+                            gltf::animation::Property::MorphTargetWeights => TargetProperty::Weights,
+                        };
+                        let sampler = ch.sampler();
+                        let interpolation = match sampler.interpolation() {
+                            gltf::animation::Interpolation::Linear => Interpolation::Linear,
+                            gltf::animation::Interpolation::Step => Interpolation::Step,
+                            gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
+                        };
+                        let r = ch.reader(|buffer| Some(&buffers[buffer.index()]));
+                        let timestamps: Vec<f32> = r.read_inputs().map(|it| it.collect()).unwrap_or_default();
+                        for &t in &timestamps {
+                            if t > max_time {
+                                max_time = t;
+                            }
+                        }
+                        let values: Vec<f32> = match r.read_outputs() {
+                            Some(gltf::animation::util::ReadOutputs::Translations(iter)) => {
+                                iter.flat_map(|v| [v[0], v[1], v[2]]).collect()
+                            }
+                            Some(gltf::animation::util::ReadOutputs::Rotations(iter)) => {
+                                iter.into_f32().flat_map(|q| [q[0], q[1], q[2], q[3]]).collect()
+                            }
+                            Some(gltf::animation::util::ReadOutputs::Scales(iter)) => {
+                                iter.flat_map(|v| [v[0], v[1], v[2]]).collect()
+                            }
+                            Some(gltf::animation::util::ReadOutputs::MorphTargetWeights(iter)) => {
+                                iter.into_f32().collect()
+                            }
+                            None => Vec::new(),
+                        };
+                        if !timestamps.is_empty() && !values.is_empty() {
+                            channels.push(AnimationChannel {
+                                target_node,
+                                property,
+                                interpolation,
+                                timestamps,
+                                values,
+                            });
+                        }
+                    }
+                    if !channels.is_empty() {
+                        animations.push(AnimationClip {
+                            name,
+                            duration: max_time,
+                            channels,
+                        });
+                    }
+                }
+
+                let has_animation = !animations.is_empty();
+
                 Ok(MeshData {
                     positions,
                     normals,
                     uvs,
                     indices,
                     submeshes,
-                    ..Default::default()
+                    source_path: None,
+                    has_animation,
+                    is_y_up: true,
+                    nodes,
+                    skins,
+                    animations,
                 })
             }
             Err(e) => Err(format!("gltf parse error: {}", e)),
@@ -300,6 +437,7 @@ impl Loader for GltfLoader {
                 indices: mesh.indices.clone(),
                 color: None,
                 texture: None,
+                ..Default::default()
             }];
             &fallback_submesh
         } else {

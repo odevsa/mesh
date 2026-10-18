@@ -1,6 +1,7 @@
 use crate::loader::{
     compute_normals, load_texture_from_memory, load_texture_from_path, resolve_relative_file,
-    FileFormatInfo, Loader, MeshData, SubMesh, TextureData,
+    AnimationChannel, AnimationClip, FileFormatInfo, Interpolation, Joint, Loader, MeshData,
+    SceneNode, Skin, SubMesh, TargetProperty, TextureData,
 };
 use std::path::Path;
 use std::io::Read;
@@ -68,8 +69,14 @@ impl Loader for FbxLoader {
         let load_fbx_texture = |mat: &ufbx::Material, cache: &mut HashMap<String, Option<std::sync::Arc<TextureData>>>| -> Option<std::sync::Arc<TextureData>> {
             let tex_ref = mat.pbr.base_color.texture.as_ref()
                 .or_else(|| mat.fbx.diffuse_color.texture.as_ref())
-                .or_else(|| mat.textures.iter().find(|t| t.material_prop == "DiffuseColor" || t.material_prop == "BaseColor").map(|t| &t.texture))
-                .or_else(|| mat.textures.first().map(|t| &t.texture));
+                .or_else(|| {
+                    if mat.textures.count > 0 {
+                        mat.textures.iter().find(|t| t.material_prop == "DiffuseColor" || t.material_prop == "BaseColor").map(|t| &t.texture)
+                            .or_else(|| mat.textures.first().map(|t| &t.texture))
+                    } else {
+                        None
+                    }
+                });
 
             let tex = tex_ref?.as_ref();
 
@@ -106,11 +113,15 @@ impl Loader for FbxLoader {
 
         struct SubMeshAcc {
             positions: Vec<[f32; 3]>,
+            rest_positions: Vec<[f32; 3]>,
             normals: Vec<[f32; 3]>,
+            rest_normals: Vec<[f32; 3]>,
             uvs: Vec<[f32; 2]>,
             indices: Vec<[u32; 3]>,
             color: Option<[f32; 4]>,
             texture: Option<std::sync::Arc<TextureData>>,
+            joint_indices: Option<Vec<[u16; 4]>>,
+            joint_weights: Option<Vec<[f32; 4]>>,
         }
 
         let mut positions = Vec::new();
@@ -126,16 +137,17 @@ impl Loader for FbxLoader {
                 None => continue,
             };
             processed_nodes += 1;
+            let has_skin = mesh.skin_deformers.count > 0;
 
             let get_mat = |idx: usize| -> Option<&ufbx::Material> {
-                if let Some(m) = node.materials.get(idx) {
-                    Some(m.as_ref())
-                } else if let Some(m) = mesh.materials.get(idx) {
-                    Some(m.as_ref())
-                } else if let Some(m) = node.materials.first() {
-                    Some(m.as_ref())
-                } else if let Some(m) = mesh.materials.first() {
-                    Some(m.as_ref())
+                if node.materials.count > idx {
+                    Some(&node.materials[idx])
+                } else if mesh.materials.count > idx {
+                    Some(&mesh.materials[idx])
+                } else if node.materials.count > 0 {
+                    Some(&node.materials[0])
+                } else if mesh.materials.count > 0 {
+                    Some(&mesh.materials[0])
                 } else {
                     None
                 }
@@ -144,7 +156,7 @@ impl Loader for FbxLoader {
             let mut mat_subs: HashMap<Option<u32>, SubMeshAcc> = HashMap::new();
 
             for (face_idx, face) in mesh.faces.iter().enumerate() {
-                let raw_mat_idx = if !mesh.materials.is_empty() && mesh.face_material.len() > face_idx {
+                let raw_mat_idx = if mesh.materials.count > 0 && mesh.face_material.count > face_idx {
                     mesh.face_material[face_idx]
                 } else {
                     0
@@ -158,11 +170,15 @@ impl Loader for FbxLoader {
                     let texture = mat_opt.and_then(|m| load_fbx_texture(m, &mut tex_cache));
                     SubMeshAcc {
                         positions: Vec::new(),
+                        rest_positions: Vec::new(),
                         normals: Vec::new(),
+                        rest_normals: Vec::new(),
                         uvs: Vec::new(),
                         indices: Vec::new(),
                         color,
                         texture,
+                        joint_indices: if has_skin { Some(Vec::new()) } else { None },
+                        joint_weights: if has_skin { Some(Vec::new()) } else { None },
                     }
                 });
 
@@ -179,9 +195,10 @@ impl Loader for FbxLoader {
                             let p = mesh.vertices[p_idx];
                             let tp = ufbx::transform_position(&node.node_to_world, p);
                             sub.positions.push([tp.x as f32, tp.y as f32, tp.z as f32]);
+                            sub.rest_positions.push([p.x as f32, p.y as f32, p.z as f32]);
 
-                            let norm = if mesh.vertex_normal.exists {
-                                let raw_n = if !mesh.vertex_normal.indices.is_empty() && (corner_idx as usize) < mesh.vertex_normal.indices.len() {
+                            let raw_n = if mesh.vertex_normal.exists {
+                                if !mesh.vertex_normal.indices.is_empty() && (corner_idx as usize) < mesh.vertex_normal.indices.len() {
                                     let val_idx = mesh.vertex_normal.indices[corner_idx as usize] as usize;
                                     mesh.vertex_normal.values.get(val_idx).copied()
                                 } else if (corner_idx as usize) < mesh.vertex_normal.values.len() {
@@ -190,18 +207,54 @@ impl Loader for FbxLoader {
                                     mesh.vertex_normal.values.get(p_idx).copied()
                                 } else {
                                     None
-                                };
-
-                                if let Some(n) = raw_n {
-                                    let tn = ufbx::transform_direction(&node.node_to_world, n);
-                                    [tn.x as f32, tn.y as f32, tn.z as f32]
-                                } else {
-                                    [0.0, 0.0, 1.0]
                                 }
+                            } else {
+                                None
+                            };
+
+                            let norm = if let Some(n) = raw_n {
+                                let tn = ufbx::transform_direction(&node.node_to_world, n);
+                                [tn.x as f32, tn.y as f32, tn.z as f32]
+                            } else {
+                                [0.0, 0.0, 1.0]
+                            };
+                            let rest_norm = if let Some(n) = raw_n {
+                                [n.x as f32, n.y as f32, n.z as f32]
                             } else {
                                 [0.0, 0.0, 1.0]
                             };
                             sub.normals.push(norm);
+                            sub.rest_normals.push(rest_norm);
+
+                            if has_skin {
+                                let deformer = &mesh.skin_deformers[0];
+                                let (j_indices, j_weights) = if p_idx < deformer.vertices.len() {
+                                    let sv = &deformer.vertices[p_idx];
+                                    let w_slice = &(*deformer.weights)[sv.weight_begin as usize..(sv.weight_begin + sv.num_weights) as usize];
+                                    let mut indices = [0u16; 4];
+                                    let mut weights = [0.0f32; 4];
+                                    let mut total_w = 0.0f32;
+                                    for (i, w) in w_slice.iter().take(4).enumerate() {
+                                        indices[i] = w.cluster_index as u16;
+                                        weights[i] = w.weight as f32;
+                                        total_w += weights[i];
+                                    }
+                                    if total_w > 1e-6 {
+                                        for w in &mut weights {
+                                            *w /= total_w;
+                                        }
+                                    }
+                                    (indices, weights)
+                                } else {
+                                    ([0, 0, 0, 0], [1.0, 0.0, 0.0, 0.0])
+                                };
+                                if let Some(ref mut jis) = sub.joint_indices {
+                                    jis.push(j_indices);
+                                }
+                                if let Some(ref mut jws) = sub.joint_weights {
+                                    jws.push(j_weights);
+                                }
+                            }
 
                             let uv = if mesh.vertex_uv.exists {
                                 let raw_u = if !mesh.vertex_uv.indices.is_empty() && (corner_idx as usize) < mesh.vertex_uv.indices.len() {
@@ -240,22 +293,27 @@ impl Loader for FbxLoader {
 
                 submeshes.push(SubMesh {
                     positions: acc.positions,
+                    rest_positions: acc.rest_positions,
                     normals: acc.normals,
+                    rest_normals: acc.rest_normals,
                     uvs: acc.uvs,
                     indices: acc.indices,
                     color: acc.color,
                     texture: acc.texture,
+                    joint_indices: acc.joint_indices,
+                    joint_weights: acc.joint_weights,
+                    node_index: Some(node.element.typed_id as usize),
                 });
             }
         }
 
-        if processed_nodes == 0 {
+        if processed_nodes == 0 && scene.meshes.count > 0 {
             for mesh in &scene.meshes {
                 let get_mat = |idx: usize| -> Option<&ufbx::Material> {
-                    if let Some(m) = mesh.materials.get(idx) {
-                        Some(m.as_ref())
-                    } else if let Some(m) = mesh.materials.first() {
-                        Some(m.as_ref())
+                    if mesh.materials.count > idx {
+                        Some(&mesh.materials[idx])
+                    } else if mesh.materials.count > 0 {
+                        Some(&mesh.materials[0])
                     } else {
                         None
                     }
@@ -264,7 +322,7 @@ impl Loader for FbxLoader {
                 let mut mat_subs: HashMap<Option<u32>, SubMeshAcc> = HashMap::new();
 
                 for (face_idx, face) in mesh.faces.iter().enumerate() {
-                    let raw_mat_idx = if !mesh.materials.is_empty() && mesh.face_material.len() > face_idx {
+                    let raw_mat_idx = if mesh.materials.count > 0 && mesh.face_material.count > face_idx {
                         mesh.face_material[face_idx]
                     } else {
                         0
@@ -278,11 +336,15 @@ impl Loader for FbxLoader {
                         let texture = mat_opt.and_then(|m| load_fbx_texture(m, &mut tex_cache));
                         SubMeshAcc {
                             positions: Vec::new(),
+                            rest_positions: Vec::new(),
                             normals: Vec::new(),
+                            rest_normals: Vec::new(),
                             uvs: Vec::new(),
                             indices: Vec::new(),
                             color,
                             texture,
+                            joint_indices: None,
+                            joint_weights: None,
                         }
                     });
 
@@ -298,6 +360,7 @@ impl Loader for FbxLoader {
                                 let p_idx = mesh.vertex_indices[corner_idx as usize] as usize;
                                 let p = mesh.vertices[p_idx];
                                 sub.positions.push([p.x as f32, p.y as f32, p.z as f32]);
+                                sub.rest_positions.push([p.x as f32, p.y as f32, p.z as f32]);
 
                                 let norm = if mesh.vertex_normal.exists {
                                     let raw_n = if !mesh.vertex_normal.indices.is_empty() && (corner_idx as usize) < mesh.vertex_normal.indices.len() {
@@ -320,6 +383,7 @@ impl Loader for FbxLoader {
                                     [0.0, 0.0, 1.0]
                                 };
                                 sub.normals.push(norm);
+                                sub.rest_normals.push(norm);
 
                                 let uv = if mesh.vertex_uv.exists {
                                     let raw_u = if !mesh.vertex_uv.indices.is_empty() && (corner_idx as usize) < mesh.vertex_uv.indices.len() {
@@ -358,25 +422,175 @@ impl Loader for FbxLoader {
 
                     submeshes.push(SubMesh {
                         positions: acc.positions,
+                        rest_positions: acc.rest_positions,
                         normals: acc.normals,
+                        rest_normals: acc.rest_normals,
                         uvs: acc.uvs,
                         indices: acc.indices,
                         color: acc.color,
                         texture: acc.texture,
+                        joint_indices: acc.joint_indices,
+                        joint_weights: acc.joint_weights,
+                        node_index: None,
                     });
                 }
             }
         }
 
-        if positions.is_empty() {
-            return Err("fbx: no positions found in model".into());
+        let mut nodes = Vec::new();
+        if scene.nodes.count > 0 {
+            for node in &scene.nodes {
+                let children = if node.children.count > 0 {
+                    node.children.iter().map(|c| c.element.typed_id as usize).collect()
+                } else {
+                    Vec::new()
+                };
+                nodes.push(SceneNode {
+                    name: node.element.name.to_string(),
+                    parent: node.parent.as_ref().map(|p| p.element.typed_id as usize),
+                    children,
+                    initial_translation: [
+                        node.local_transform.translation.x as f32,
+                        node.local_transform.translation.y as f32,
+                        node.local_transform.translation.z as f32,
+                    ],
+                    initial_rotation: [
+                        node.local_transform.rotation.x as f32,
+                        node.local_transform.rotation.y as f32,
+                        node.local_transform.rotation.z as f32,
+                        node.local_transform.rotation.w as f32,
+                    ],
+                    initial_scale: [
+                        node.local_transform.scale.x as f32,
+                        node.local_transform.scale.y as f32,
+                        node.local_transform.scale.z as f32,
+                    ],
+                    mesh_index: node.mesh.as_ref().map(|m| m.element.typed_id as usize),
+                });
+            }
         }
+
+        let mut skins = Vec::new();
+        if scene.meshes.count > 0 {
+            for mesh in &scene.meshes {
+                if mesh.skin_deformers.count > 0 {
+                    for deformer in &mesh.skin_deformers {
+                        let name = deformer.element.name.to_string();
+                        let mut joints = Vec::new();
+                        if deformer.clusters.count > 0 {
+                            for cluster in &deformer.clusters {
+                                let bone_idx = cluster.bone_node.as_ref().map(|b| b.element.typed_id as usize).unwrap_or(0);
+                                let m = &cluster.geometry_to_bone;
+                                let inv_bind = [
+                                    [m.m00 as f32, m.m10 as f32, m.m20 as f32, 0.0],
+                                    [m.m01 as f32, m.m11 as f32, m.m21 as f32, 0.0],
+                                    [m.m02 as f32, m.m12 as f32, m.m22 as f32, 0.0],
+                                    [m.m03 as f32, m.m13 as f32, m.m23 as f32, 1.0],
+                                ];
+                                joints.push(Joint {
+                                    node_index: bone_idx,
+                                    inverse_bind_matrix: inv_bind,
+                                });
+                            }
+                        }
+                        skins.push(Skin { name, joints });
+                    }
+                }
+            }
+        }
+
+        let mut animations = Vec::new();
+        if scene.anim_stacks.count > 0 {
+            for stack in &scene.anim_stacks {
+                let name = stack.element.name.to_string();
+                let duration = (stack.time_end - stack.time_begin).max(0.0) as f32;
+                let mut channels = Vec::new();
+
+                if let Ok(baked_root) = ufbx::bake_anim(&scene, &stack.anim, ufbx::BakeOpts::default()) {
+                    let baked = &*baked_root;
+                    if baked.nodes.count > 0 {
+                        for baked_node in &baked.nodes {
+                            let target_node = baked_node.typed_id as usize;
+
+                            if baked_node.translation_keys.count > 0 {
+                                let mut timestamps = Vec::with_capacity(baked_node.translation_keys.count);
+                                let mut values = Vec::with_capacity(baked_node.translation_keys.count * 3);
+                                for k in &baked_node.translation_keys {
+                                    timestamps.push((k.time - stack.time_begin).max(0.0) as f32);
+                                    values.push(k.value.x as f32);
+                                    values.push(k.value.y as f32);
+                                    values.push(k.value.z as f32);
+                                }
+                                channels.push(AnimationChannel {
+                                    target_node,
+                                    property: TargetProperty::Translation,
+                                    interpolation: Interpolation::Linear,
+                                    timestamps,
+                                    values,
+                                });
+                            }
+
+                            if baked_node.rotation_keys.count > 0 {
+                                let mut timestamps = Vec::with_capacity(baked_node.rotation_keys.count);
+                                let mut values = Vec::with_capacity(baked_node.rotation_keys.count * 4);
+                                for k in &baked_node.rotation_keys {
+                                    timestamps.push((k.time - stack.time_begin).max(0.0) as f32);
+                                    values.push(k.value.x as f32);
+                                    values.push(k.value.y as f32);
+                                    values.push(k.value.z as f32);
+                                    values.push(k.value.w as f32);
+                                }
+                                channels.push(AnimationChannel {
+                                    target_node,
+                                    property: TargetProperty::Rotation,
+                                    interpolation: Interpolation::Linear,
+                                    timestamps,
+                                    values,
+                                });
+                            }
+
+                            if baked_node.scale_keys.count > 0 {
+                                let mut timestamps = Vec::with_capacity(baked_node.scale_keys.count);
+                                let mut values = Vec::with_capacity(baked_node.scale_keys.count * 3);
+                                for k in &baked_node.scale_keys {
+                                    timestamps.push((k.time - stack.time_begin).max(0.0) as f32);
+                                    values.push(k.value.x as f32);
+                                    values.push(k.value.y as f32);
+                                    values.push(k.value.z as f32);
+                                }
+                                channels.push(AnimationChannel {
+                                    target_node,
+                                    property: TargetProperty::Scale,
+                                    interpolation: Interpolation::Linear,
+                                    timestamps,
+                                    values,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if duration > 0.0 || !channels.is_empty() {
+                    animations.push(AnimationClip {
+                        name: if name.is_empty() { "Take 001".to_string() } else { name },
+                        duration,
+                        channels,
+                    });
+                }
+            }
+        }
+        let has_animation = !animations.is_empty();
 
         Ok(MeshData {
             positions,
             normals,
             indices,
             submeshes,
+            has_animation,
+            is_y_up: false,
+            nodes,
+            skins,
+            animations,
             ..Default::default()
         })
     }
@@ -402,6 +616,7 @@ impl Loader for FbxLoader {
                 indices: mesh.indices.clone(),
                 color: None,
                 texture: None,
+                ..Default::default()
             }];
             &fallback_submesh
         } else {

@@ -894,7 +894,7 @@ impl SceneRenderer {
             let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Submesh Vertex Buffer"),
                 contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             });
 
             let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -957,6 +957,45 @@ impl SceneRenderer {
                 wireframe_index_count: wireframe_indices.len() as u32,
                 texture_bind_group,
             });
+        }
+    }
+
+    pub fn update_submesh_vertices(
+        &mut self,
+        submesh_idx: usize,
+        sub: &crate::loader::SubMesh,
+        scale: f32,
+        center_offset: glam::Vec3,
+        model_pos_offset: glam::Vec3,
+    ) {
+        if let Some(gpu_sub) = self.gpu_submeshes.get(submesh_idx) {
+            let mut vertices = Vec::with_capacity(sub.positions.len());
+            for i in 0..sub.positions.len() {
+                let p = sub.positions[i];
+                let centered = (glam::Vec3::new(p[0], p[1], p[2]) - center_offset) * scale + model_pos_offset;
+                let norm = sub.normals.get(i).copied().unwrap_or([0.0, 0.0, 1.0]);
+                let uv = sub.uvs.get(i).copied().unwrap_or([0.0, 0.0]);
+                let col = if let Some(c) = sub.color {
+                    c
+                } else if sub.texture.is_some() {
+                    [1.0, 1.0, 1.0, 1.0]
+                } else {
+                    [0.0, 0.0, 0.0, 0.0]
+                };
+
+                vertices.push(Vertex {
+                    position: [centered.x, centered.y, centered.z],
+                    normal: norm,
+                    uv,
+                    color: col,
+                });
+            }
+
+            self.queue.write_buffer(
+                &gpu_sub.vertex_buffer,
+                0,
+                bytemuck::cast_slice(&vertices),
+            );
         }
     }
 

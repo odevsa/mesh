@@ -54,5 +54,12 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::SupportedFormats => "Поддерживаемые форматы",
         TextKey::WindowLoadingTitle => "Mesh - Загрузка...",
         TextKey::WindowTitle => "Mesh",
+        TextKey::Animation => "Анимация",
+        TextKey::Play => "Воспроизвести",
+        TextKey::Pause => "Пауза",
+        TextKey::Stop => "Остановить",
+        TextKey::Clip => "Клип:",
+        TextKey::Speed => "Скорость:",
+        TextKey::Loop => "Зациклить",
     }
 }

@@ -54,5 +54,12 @@ pub fn translate(key: TextKey) -> &'static str {
         TextKey::SupportedFormats => "지원 형식",
         TextKey::WindowLoadingTitle => "Mesh - 불러오는 중...",
         TextKey::WindowTitle => "Mesh",
+        TextKey::Animation => "애니메이션",
+        TextKey::Play => "재생",
+        TextKey::Pause => "일시정지",
+        TextKey::Stop => "정지",
+        TextKey::Clip => "클립:",
+        TextKey::Speed => "속도:",
+        TextKey::Loop => "반복",
     }
 }

@@ -26,9 +26,10 @@ pub struct App {
     current_mesh_data: Option<MeshData>,
     current_model_stats: Option<overlay::ModelStats>,
     show_about: bool,
+    current_center_offset: Vec3,
+    current_model_center: Vec3,
     #[allow(dead_code)]
     pub current_model_path: Option<std::path::PathBuf>,
-    #[allow(dead_code)]
     pub animation_controller: AnimationController,
     pub export_formats: Vec<crate::loader::FileFormatInfo>,
 }
@@ -109,6 +110,8 @@ impl App {
             current_mesh_data: None,
             current_model_stats: None,
             show_about: false,
+            current_center_offset: Vec3::ZERO,
+            current_model_center: Vec3::ZERO,
             current_model_path: None,
             animation_controller: AnimationController::default(),
             export_formats,
@@ -242,12 +245,37 @@ impl App {
         );
         let model_center = Vec3::new(0.0, 0.0, z_offset);
 
+        self.current_center_offset = center_offset;
+        self.current_model_center = model_center;
+
         if let Some(ref mut r) = self.renderer {
             r.upload_mesh(mesh, scale_factor, center_offset, model_center);
         }
 
         self.camera.set_center(model_center);
         self.has_model = true;
+    }
+
+    fn update_animation_pose(&mut self) {
+        let Some(ref mut mesh) = self.current_mesh_data else { return };
+        if !self.animation_controller.has_animation() { return };
+
+        mesh.ensure_rest_geometry();
+        let modified = self.animation_controller.evaluate(&mesh.nodes, &mesh.skins, &mut mesh.submeshes, mesh.is_y_up);
+        if modified {
+            if let Some(ref mut r) = self.renderer {
+                let scale_factor = self.cfg.object_scale * self.base_scale_factor;
+                for (i, sub) in mesh.submeshes.iter().enumerate() {
+                    r.update_submesh_vertices(
+                        i,
+                        sub,
+                        scale_factor,
+                        self.current_center_offset,
+                        self.current_model_center,
+                    );
+                }
+            }
+        }
     }
 
     fn process_incoming_meshes(&mut self) {
@@ -299,10 +327,10 @@ impl App {
         let mut ui_resp = UiResponse::default();
         let menu_open = self.camera.menu_open;
         let menu_pos = self.menu_pos;
-        let cfg = &mut self.cfg;
         let is_loading = self.camera.is_loading();
         let has_model = self.has_model;
-        let lang = cfg.language;
+        let lang = self.cfg.language;
+        let show_dimensions = self.cfg.show_dimensions;
 
         self.show_about = self.camera.about_open;
 
@@ -313,7 +341,7 @@ impl App {
             ui_resp.close_menu_requested = true;
         }
 
-        if cfg.show_dimensions && has_model && !is_loading {
+        if show_dimensions && has_model && !is_loading {
             overlay::render_details_overlay(
                 ctx,
                 lang,
@@ -322,8 +350,20 @@ impl App {
             );
         }
 
+        if has_model && !is_loading {
+            let anim_interacted = overlay::render_animation_controls(
+                ctx,
+                &mut self.animation_controller,
+                lang,
+            );
+            if anim_interacted {
+                self.update_animation_pose();
+                ctx.request_repaint();
+            }
+        }
+
         if menu_open {
-            let menu_resp = render_context_menu(ctx, menu_pos, cfg, has_model, &self.export_formats);
+            let menu_resp = render_context_menu(ctx, menu_pos, &mut self.cfg, has_model, &self.export_formats);
             let open_dialog = ui_resp.open_file_dialog || menu_resp.open_file_dialog;
             let close_menu = ui_resp.close_menu_requested || menu_resp.close_menu_requested;
             let open_about = ui_resp.open_about_requested || menu_resp.open_about_requested;
@@ -335,7 +375,7 @@ impl App {
             ui_resp.export_format_requested = export_req;
         }
 
-        overlay::render_about_dialog(ctx, &mut self.show_about, cfg.language);
+        overlay::render_about_dialog(ctx, &mut self.show_about, self.cfg.language);
         self.camera.about_open = self.show_about;
 
         if ui_resp.close_menu_requested {
@@ -439,6 +479,15 @@ impl eframe::App for App {
         }
 
         // Camera updates & animation repaint
+        let dt = ctx.input(|i| i.stable_dt);
+        let anim_changed = self.animation_controller.update(dt);
+        if anim_changed {
+            self.update_animation_pose();
+            ctx.request_repaint();
+        } else if self.animation_controller.is_playing() {
+            ctx.request_repaint();
+        }
+
         self.camera.update();
         if self.camera.smooth_orbit
             && (self.camera.vel_yaw.abs() > 1e-5 || self.camera.vel_pitch.abs() > 1e-5)

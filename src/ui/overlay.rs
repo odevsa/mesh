@@ -214,3 +214,154 @@ pub fn render_details_overlay(
         );
     }
 }
+
+pub fn render_animation_controls(
+    ctx: &Context,
+    controller: &mut crate::loader::AnimationController,
+    lang: Language,
+) -> bool {
+    if !controller.has_animation() {
+        return false;
+    }
+
+    let mut user_interacted = false;
+
+    egui::Area::new(egui::Id::new("animation_controls_overlay"))
+        .anchor(Align2::LEFT_BOTTOM, Vec2::new(16.0, -16.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::window(&ctx.global_style())
+                .shadow(egui::Shadow::NONE)
+                .inner_margin(Margin::symmetric(10, 8))
+                .show(ui, |ui| {
+                    let clips_len = controller.clips().len();
+                    ui.set_width(if clips_len > 1 { 380.0 } else { 330.0 });
+
+                    let duration = controller.duration();
+                    let current_time = controller.current_time();
+
+                    // Line 1: 100% width progress bar (dark gray background, light gray progress)
+                    if duration > 0.0 {
+                        let full_width = ui.available_width();
+                        let bar_height = 8.0;
+                        let (rect, response) = ui.allocate_exact_size(
+                            Vec2::new(full_width, bar_height),
+                            egui::Sense::click_and_drag(),
+                        );
+
+                        if response.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+
+                        if response.clicked() || response.dragged() {
+                            if let Some(pos) = response.interact_pointer_pos() {
+                                let ratio = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+                                controller.seek(ratio * duration);
+                                user_interacted = true;
+                            }
+                        }
+
+                        let progress = (current_time / duration).clamp(0.0, 1.0);
+                        let bg_color = egui::Color32::from_gray(55); // cinza escuro
+                        let fg_color = if response.hovered() || response.dragged() {
+                            egui::Color32::from_gray(215) // cinza mais claro hover/drag
+                        } else {
+                            egui::Color32::from_gray(180) // cinza mais claro
+                        };
+
+                        // Barrinha cinza escuro (fundo 100%)
+                        ui.painter().rect_filled(rect, 3.0, bg_color);
+
+                        // Barrinha cinza mais claro (progresso)
+                        if progress > 0.0 {
+                            let mut prog_rect = rect;
+                            prog_rect.set_width((rect.width() * progress).max(2.0));
+                            ui.painter().rect_filled(prog_rect, 3.0, fg_color);
+                        }
+                    }
+
+                    ui.add_space(4.0);
+
+                    // Line 2: 3-column layout (Left: time [/ clip], Center: play/stop/loop, Right: speed)
+                    ui.columns(3, |cols| {
+                        // Left-aligned: current_time / duration
+                        cols[0].with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(format!("{:.2}s / {:.2}s", current_time, duration))
+                                    .size(11.0)
+                                    .color(ui.visuals().weak_text_color()),
+                            );
+
+                            if clips_len > 1 {
+                                let current_clip_name = controller.active_clip_name().to_string();
+                                egui::ComboBox::from_id_salt("anim_clip_select")
+                                    .selected_text(&current_clip_name)
+                                    .width(60.0)
+                                    .show_ui(ui, |ui| {
+                                        for i in 0..clips_len {
+                                            let name = if controller.clips()[i].name.is_empty() {
+                                                format!("Clip {}", i + 1)
+                                            } else {
+                                                controller.clips()[i].name.clone()
+                                            };
+                                            if ui.selectable_label(controller.active_clip_index == i, name).clicked() {
+                                                controller.select_clip(i);
+                                                user_interacted = true;
+                                            }
+                                        }
+                                    });
+                            }
+                        });
+
+                        // Center-aligned: play/pause, stop (square), loop
+                        cols[1].with_layout(
+                            egui::Layout::left_to_right(egui::Align::Center)
+                                .with_main_align(egui::Align::Center),
+                            |ui| {
+                                ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+
+                                let play_pause_icon = if controller.is_playing() { "⏸" } else { "▶" };
+                                let play_pause_tooltip = if controller.is_playing() {
+                                    lang.t(TextKey::Pause)
+                                } else {
+                                    lang.t(TextKey::Play)
+                                };
+                                if ui.button(play_pause_icon).on_hover_text(play_pause_tooltip).clicked() {
+                                    controller.toggle_play_pause();
+                                    user_interacted = true;
+                                }
+
+                                if ui.button("⏹").on_hover_text(lang.t(TextKey::Stop)).clicked() {
+                                    controller.stop();
+                                    user_interacted = true;
+                                }
+
+                                let loop_text = if controller.is_looping { "⇄" } else { "➡" };
+                                let loop_btn = ui.button(loop_text).on_hover_text(lang.t(TextKey::Loop));
+                                if loop_btn.clicked() {
+                                    controller.set_looping(!controller.is_looping);
+                                }
+                            },
+                        );
+
+                        // Right-aligned: speed (without label)
+                        cols[2].with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let speed_text = format!("{:.2}x", controller.speed());
+                            egui::ComboBox::from_id_salt("anim_speed_select")
+                                .selected_text(speed_text)
+                                .width(56.0)
+                                .show_ui(ui, |ui| {
+                                    for &sp in &[0.25, 0.5, 1.0, 1.5, 2.0] {
+                                        if ui.selectable_label((controller.speed() - sp).abs() < 1e-4, format!("{:.2}x", sp)).clicked() {
+                                            controller.set_speed(sp);
+                                        }
+                                    }
+                                });
+                        });
+                    });
+                });
+        });
+
+    user_interacted
+}
+

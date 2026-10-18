@@ -143,7 +143,7 @@ impl LoaderRegistry {
                 let rf = std::fs::File::open(path).map_err(|e| format!("open failed: {}", e))?;
                 let mut mesh = l.load(path, Box::new(rf))?;
                 mesh.source_path = Some(path.to_path_buf());
-                mesh.has_animation = l.supports_animation();
+                mesh.has_animation = !mesh.animations.is_empty();
                 return Ok(mesh);
             }
         }
@@ -202,7 +202,11 @@ impl LoaderRegistry {
     }
 
     pub fn create_animation_controller_for_mesh(&self, mesh: &MeshData) -> AnimationController {
-        AnimationController::new(mesh.has_animation)
+        if !mesh.animations.is_empty() {
+            AnimationController::from_clips(mesh.animations.clone())
+        } else {
+            AnimationController::default()
+        }
     }
 
     #[allow(dead_code)]

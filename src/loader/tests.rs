@@ -342,6 +342,111 @@ fn test_animation_controller_lifecycle() {
 }
 
 #[test]
+fn test_animation_controller_evaluation_and_interpolation() {
+    let channel = AnimationChannel {
+        target_node: 0,
+        property: TargetProperty::Translation,
+        interpolation: Interpolation::Linear,
+        timestamps: vec![0.0, 1.0, 2.0],
+        values: vec![
+            0.0, 0.0, 0.0, // t = 0s
+            10.0, 0.0, 0.0, // t = 1s
+            20.0, 0.0, 0.0, // t = 2s
+        ],
+    };
+
+    let clip = AnimationClip {
+        name: "MoveX".to_string(),
+        duration: 2.0,
+        channels: vec![channel],
+    };
+
+    let mut controller = AnimationController::from_clips(vec![clip]);
+    assert!(controller.has_animation());
+    assert_eq!(controller.duration(), 2.0);
+
+    let nodes = vec![SceneNode {
+        name: "RootNode".to_string(),
+        parent: None,
+        children: Vec::new(),
+        initial_translation: [0.0, 0.0, 0.0],
+        initial_rotation: [0.0, 0.0, 0.0, 1.0],
+        initial_scale: [1.0, 1.0, 1.0],
+        mesh_index: Some(0),
+    }];
+
+    let mut submeshes = vec![SubMesh {
+        positions: vec![[1.0, 2.0, 3.0]],
+        normals: vec![[0.0, 1.0, 0.0]],
+        uvs: vec![[0.0, 0.0]],
+        indices: vec![[0, 0, 0]],
+        color: None,
+        texture: None,
+        joint_indices: None,
+        joint_weights: None,
+        node_index: Some(0),
+        ..Default::default()
+    }];
+
+    // Test at t = 0.5s (midpoint between 0.0 and 10.0 => should be 5.0 on X)
+    controller.seek(0.5);
+    let modified = controller.evaluate(&nodes, &[], &mut submeshes, false);
+    assert!(modified);
+    assert!((submeshes[0].positions[0][0] - 6.0).abs() < 1e-4, "Expected X=6.0 (1.0 initial + 5.0 delta), got {}", submeshes[0].positions[0][0]);
+
+    // Test at t = 1.0s (should be 10.0 on X => 11.0 total)
+    controller.seek(1.0);
+    controller.evaluate(&nodes, &[], &mut submeshes, false);
+    assert!((submeshes[0].positions[0][0] - 11.0).abs() < 1e-4, "Expected X=11.0, got {}", submeshes[0].positions[0][0]);
+
+    // Test timeline update with speed = 2.0
+    controller.set_speed(2.0);
+    controller.seek(0.0);
+    controller.play();
+    assert!(controller.is_playing());
+    let advanced = controller.update(0.5); // dt = 0.5 * speed 2.0 = 1.0s advance
+    assert!(advanced);
+    assert!((controller.current_time() - 1.0).abs() < 1e-4);
+}
+
+#[test]
+fn test_animation_clip_selection_and_scrubbing() {
+    let clip1 = AnimationClip {
+        name: "Walk".to_string(),
+        duration: 1.5,
+        channels: Vec::new(),
+    };
+    let clip2 = AnimationClip {
+        name: "Run".to_string(),
+        duration: 0.8,
+        channels: Vec::new(),
+    };
+
+    let mut controller = AnimationController::from_clips(vec![clip1, clip2]);
+    assert_eq!(controller.clips().len(), 2);
+    assert_eq!(controller.active_clip_name(), "Walk");
+    assert_eq!(controller.duration(), 1.5);
+
+    // Switch clip
+    controller.select_clip(1);
+    assert_eq!(controller.active_clip_index, 1);
+    assert_eq!(controller.active_clip_name(), "Run");
+    assert_eq!(controller.duration(), 0.8);
+    assert_eq!(controller.current_time(), 0.0);
+
+    // Scrub beyond duration
+    controller.seek(2.0);
+    assert_eq!(controller.current_time(), 0.8); // Clamped to duration
+
+    // Loop behavior
+    controller.set_looping(true);
+    controller.play();
+    controller.seek(0.7);
+    controller.update(0.3); // 0.7 + 0.3 = 1.0 -> mod 0.8 = 0.2
+    assert!((controller.current_time() - 0.2).abs() < 1e-4);
+}
+
+#[test]
 fn test_suzanne_export_materials_and_orientation() {
     let registry = LoaderRegistry::default_registry();
     let suzanne_path = PathBuf::from("assets/models/Suzanne.glb");
@@ -382,4 +487,103 @@ fn test_suzanne_export_materials_and_orientation() {
     }
 
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_models_without_animation_do_not_show_controls() {
+    let registry = LoaderRegistry::default_registry();
+    let files = [
+        "assets/models/Suzanne.stl",
+        "assets/models/Suzanne.obj",
+        "assets/models/Suzanne.glb",
+        "assets/models/Suzanne.3mf",
+        "assets/models/Suzanne.fbx",
+        "assets/models/Suzanne.dae",
+    ];
+
+    for file in files {
+        let path = PathBuf::from(file);
+        if path.exists() {
+            let mesh = registry.load_path(&path).unwrap_or_else(|e| panic!("Failed to load {}: {}", file, e));
+            assert!(
+                !mesh.has_animation,
+                "Model {} without animations should have has_animation = false",
+                file
+            );
+            assert!(
+                mesh.animations.is_empty(),
+                "Model {} without animations should have empty animations list",
+                file
+            );
+
+            let ctrl = registry.create_animation_controller_for_mesh(&mesh);
+            assert!(
+                !ctrl.has_animation(),
+                "AnimationController for model {} must return has_animation() = false",
+                file
+            );
+        }
+    }
+}
+
+#[test]
+fn test_y_up_and_z_up_evaluation_accuracy() {
+    let channel = AnimationChannel {
+        target_node: 0,
+        property: TargetProperty::Translation,
+        interpolation: Interpolation::Linear,
+        timestamps: vec![0.0, 1.0],
+        values: vec![
+            0.0, 0.0, 0.0, // t = 0
+            2.0, 4.0, 6.0, // t = 1 (glTF Y-up: X=2, Y=4, Z=6)
+        ],
+    };
+    let clip = AnimationClip {
+        name: "TestClip".to_string(),
+        duration: 1.0,
+        channels: vec![channel],
+    };
+    let mut ctrl = AnimationController::from_clips(vec![clip]);
+    assert!(ctrl.has_animation());
+
+    let nodes = vec![SceneNode {
+        name: "Node".to_string(),
+        parent: None,
+        children: Vec::new(),
+        initial_translation: [0.0, 0.0, 0.0],
+        initial_rotation: [0.0, 0.0, 0.0, 1.0],
+        initial_scale: [1.0, 1.0, 1.0],
+        mesh_index: Some(0),
+    }];
+
+    // 1. Test with is_y_up = true (glTF): position [X, Y, Z] -> viewer [X, -Z, Y]
+    let mut sub_y_up = vec![SubMesh {
+        positions: vec![[0.0, 0.0, 0.0]],
+        rest_positions: vec![[0.0, 0.0, 0.0]],
+        normals: vec![[0.0, 1.0, 0.0]],
+        rest_normals: vec![[0.0, 1.0, 0.0]],
+        node_index: Some(0),
+        ..Default::default()
+    }];
+
+    ctrl.seek(1.0);
+    let mod_y = ctrl.evaluate(&nodes, &[], &mut sub_y_up, true);
+    assert!(mod_y);
+    // At t=1, translated to [2.0, 4.0, 6.0] in glTF space.
+    // In viewer space: X_v = 2.0, Y_v = -6.0, Z_v = 4.0
+    assert_eq!(sub_y_up[0].positions[0], [2.0, -6.0, 4.0]);
+
+    // 2. Test with is_y_up = false (FBX): position [X, Y, Z] -> viewer [X, Y, Z]
+    let mut sub_z_up = vec![SubMesh {
+        positions: vec![[0.0, 0.0, 0.0]],
+        rest_positions: vec![[0.0, 0.0, 0.0]],
+        normals: vec![[0.0, 0.0, 1.0]],
+        rest_normals: vec![[0.0, 0.0, 1.0]],
+        node_index: Some(0),
+        ..Default::default()
+    }];
+
+    let mod_z = ctrl.evaluate(&nodes, &[], &mut sub_z_up, false);
+    assert!(mod_z);
+    assert_eq!(sub_z_up[0].positions[0], [2.0, 4.0, 6.0]);
 }
