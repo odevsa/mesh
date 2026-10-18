@@ -1,7 +1,7 @@
 use crate::camera::{FixedCenterCamera, ORBIT_STEP};
 use crate::config::Config;
 use crate::dialog;
-use crate::loader::{self, LoaderRegistry, MeshData};
+use crate::loader::{self, AnimationController, LoaderRegistry, MeshData};
 use crate::render::{SceneRenderer, Uniforms};
 use crate::scene::model;
 use crate::ui::menu::{render_context_menu, UiResponse};
@@ -26,6 +26,10 @@ pub struct App {
     current_mesh_data: Option<MeshData>,
     current_model_stats: Option<overlay::ModelStats>,
     show_about: bool,
+    #[allow(dead_code)]
+    pub current_model_path: Option<std::path::PathBuf>,
+    #[allow(dead_code)]
+    pub animation_controller: AnimationController,
 }
 
 impl App {
@@ -102,6 +106,8 @@ impl App {
             current_mesh_data: None,
             current_model_stats: None,
             show_about: false,
+            current_model_path: None,
+            animation_controller: AnimationController::default(),
         }
     }
 
@@ -120,6 +126,9 @@ impl App {
         self.has_model = false;
         self.current_mesh_data = None;
         self.current_model_stats = None;
+        self.current_model_path = None;
+        self.animation_controller.stop();
+        self.animation_controller.set_has_animation(false);
         self.base_scale_factor = 1.0;
         self.current_model_size = Vec3::new(0.5, 0.5, 0.5);
 
@@ -231,6 +240,10 @@ impl App {
     fn process_incoming_meshes(&mut self) {
         match self.rx.try_recv() {
             Ok(Ok(mesh)) => {
+                if let Some(ref path) = mesh.source_path {
+                    self.current_model_path = Some(path.clone());
+                }
+                self.animation_controller = self.registry.create_animation_controller_for_mesh(&mesh);
                 self.current_model_stats = Some(compute_stats(&mesh));
                 self.current_mesh_data = Some(mesh);
                 self.rebuild_model_node();
@@ -242,6 +255,30 @@ impl App {
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {}
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn play_animation(&mut self) {
+        self.animation_controller.play();
+    }
+
+    #[allow(dead_code)]
+    pub fn pause_animation(&mut self) {
+        self.animation_controller.pause();
+    }
+
+    #[allow(dead_code)]
+    pub fn stop_animation(&mut self) {
+        self.animation_controller.stop();
+    }
+
+    #[allow(dead_code)]
+    pub fn export_current_model(&self, export_path: &std::path::Path) -> Result<(), String> {
+        if let Some(ref mesh) = self.current_mesh_data {
+            self.registry.export_path(export_path, mesh)
+        } else {
+            Err("No model currently loaded to export".into())
         }
     }
 

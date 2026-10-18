@@ -70,4 +70,22 @@ impl Loader for StlLoader {
             Err(e) => Err(format!("stl parse error: {}", e)),
         }
     }
+
+    fn can_export(&self, path: &Path) -> bool {
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            if ext.eq_ignore_ascii_case("stl") {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn export(&self, path: &Path, _mesh: &MeshData) -> Result<(), String> {
+        println!("[STL Format] Exporting mesh to '{}' (dummy print)", path.display());
+        Ok(())
+    }
+
+    fn supports_animation(&self) -> bool {
+        false
+    }
 }

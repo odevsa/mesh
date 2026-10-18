@@ -369,6 +369,24 @@ impl Loader for ThreemfLoader {
             ..Default::default()
         })
     }
+
+    fn can_export(&self, path: &Path) -> bool {
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            if ext.eq_ignore_ascii_case("3mf") {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn export(&self, path: &Path, _mesh: &MeshData) -> Result<(), String> {
+        println!("[3MF Format] Exporting mesh to '{}' (dummy print)", path.display());
+        Ok(())
+    }
+
+    fn supports_animation(&self) -> bool {
+        false
+    }
 }
 
 fn compute_normals(positions: &[[f32; 3]], indices: &[[u32; 3]]) -> Vec<[f32; 3]> {

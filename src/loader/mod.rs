@@ -35,14 +35,138 @@ pub struct MeshData {
     pub uvs: Vec<[f32; 2]>,
     pub indices: Vec<[u32; 3]>,
     pub submeshes: Vec<SubMesh>,
+    pub source_path: Option<std::path::PathBuf>,
+    pub has_animation: bool,
 }
 
-pub trait Loader: Send + Sync {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlaybackState {
+    #[default]
+    Stopped,
+    Playing,
+    Paused,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
+pub struct AnimationTrack {
+    pub name: String,
+    pub duration: f32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
+pub struct AnimationData {
+    pub tracks: Vec<AnimationTrack>,
+}
+
+/// Runtime controller that manages playback state (playing, paused, stopped) and timeline.
+#[derive(Debug, Clone, Default)]
+pub struct AnimationController {
+    state: PlaybackState,
+    #[allow(dead_code)]
+    current_time: f32,
+    #[allow(dead_code)]
+    speed: f32,
+    has_animation: bool,
+}
+
+impl AnimationController {
+    pub fn new(has_animation: bool) -> Self {
+        Self {
+            state: PlaybackState::Stopped,
+            current_time: 0.0,
+            speed: 1.0,
+            has_animation,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn has_animation(&self) -> bool {
+        self.has_animation
+    }
+
+    #[allow(dead_code)]
+    pub fn set_has_animation(&mut self, has_animation: bool) {
+        self.has_animation = has_animation;
+        if !has_animation {
+            self.state = PlaybackState::Stopped;
+            self.current_time = 0.0;
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn state(&self) -> PlaybackState {
+        self.state
+    }
+
+    #[allow(dead_code)]
+    pub fn current_time(&self) -> f32 {
+        self.current_time
+    }
+
+    #[allow(dead_code)]
+    pub fn speed(&self) -> f32 {
+        self.speed
+    }
+
+    #[allow(dead_code)]
+    pub fn set_speed(&mut self, speed: f32) {
+        self.speed = speed;
+    }
+
+    pub fn play(&mut self) {
+        if !self.has_animation {
+            println!("[AnimationController] Cannot play: model does not have animations.");
+            return;
+        }
+        self.state = PlaybackState::Playing;
+        println!("[AnimationController] Play animation (dummy print)");
+    }
+
+    pub fn pause(&mut self) {
+        if self.state == PlaybackState::Playing {
+            self.state = PlaybackState::Paused;
+            println!("[AnimationController] Pause animation (dummy print)");
+        } else {
+            println!("[AnimationController] Pause animation called while state is {:?}", self.state);
+        }
+    }
+
+    pub fn stop(&mut self) {
+        self.state = PlaybackState::Stopped;
+        self.current_time = 0.0;
+        println!("[AnimationController] Stop animation (dummy print)");
+    }
+}
+
+/// Trait defining a file format plugin (codec) for loading, exporting, and inspecting format capabilities.
+pub trait FormatPlugin: Send + Sync {
     #[allow(dead_code)]
     fn name(&self) -> &str;
     fn can_load(&self, path: &Path, header: &[u8]) -> bool;
     fn load(&self, path: &Path, reader: Box<dyn Read>) -> Result<MeshData, String>;
+
+    #[allow(dead_code)]
+    fn can_export(&self, path: &Path) -> bool {
+        let _ = path;
+        false
+    }
+
+    #[allow(dead_code)]
+    fn export(&self, path: &Path, mesh: &MeshData) -> Result<(), String> {
+        let _ = (path, mesh);
+        Err(format!("Exporting is not supported by '{}' format", self.name()))
+    }
+
+    #[allow(dead_code)]
+    fn supports_animation(&self) -> bool {
+        false
+    }
 }
+
+/// Backward compatibility alias: `Loader` is synonymous with `FormatPlugin`.
+pub use FormatPlugin as Loader;
 
 /// Robustly resolves a relative file path (like textures or MTL files) against base_dir,
 /// handling Windows backslashes, leading './', file-name only fallbacks, common subfolders,
@@ -156,7 +280,10 @@ impl LoaderRegistry {
         for l in &self.loaders {
             if l.can_load(path, header) {
                 let rf = std::fs::File::open(path).map_err(|e| format!("open failed: {}", e))?;
-                return l.load(path, Box::new(rf));
+                let mut mesh = l.load(path, Box::new(rf))?;
+                mesh.source_path = Some(path.to_path_buf());
+                mesh.has_animation = l.supports_animation();
+                return Ok(mesh);
             }
         }
         Err("no suitable loader".into())
@@ -170,6 +297,82 @@ impl LoaderRegistry {
         registry.register(Box::new(gltf::GltfLoader {}));
         registry.register(Box::new(fbx::FbxLoader {}));
         registry
+    }
+
+    #[allow(dead_code)]
+    pub fn find_loader_for_path(&self, path: &Path) -> Option<&dyn FormatPlugin> {
+        for l in &self.loaders {
+            if l.can_export(path) {
+                return Some(l.as_ref());
+            }
+        }
+        if let Ok(mut f) = std::fs::File::open(path) {
+            let mut header = [0u8; 64];
+            if let Ok(n) = f.read(&mut header) {
+                let header = &header[..n];
+                for l in &self.loaders {
+                    if l.can_load(path, header) {
+                        return Some(l.as_ref());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[allow(dead_code)]
+    pub fn can_export(&self, path: &Path) -> bool {
+        self.loaders.iter().any(|l| l.can_export(path))
+    }
+
+    #[allow(dead_code)]
+    pub fn export_path(&self, path: &Path, mesh: &MeshData) -> Result<(), String> {
+        if let Some(loader) = self.find_loader_for_path(path) {
+            loader.export(path, mesh)
+        } else {
+            Err(format!("No loader found capable of exporting '{}'", path.display()))
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn supports_animation(&self, path: &Path) -> bool {
+        self.find_loader_for_path(path)
+            .map(|l| l.supports_animation())
+            .unwrap_or(false)
+    }
+
+    #[allow(dead_code)]
+    pub fn has_animation(&self, path: &Path) -> bool {
+        self.supports_animation(path)
+    }
+
+    #[allow(dead_code)]
+    pub fn create_animation_controller(&self, path: &Path) -> AnimationController {
+        let has_anim = self.supports_animation(path);
+        AnimationController::new(has_anim)
+    }
+
+    #[allow(dead_code)]
+    pub fn create_animation_controller_for_mesh(&self, mesh: &MeshData) -> AnimationController {
+        AnimationController::new(mesh.has_animation)
+    }
+
+    #[allow(dead_code)]
+    pub fn play_animation(&self, path: &Path) {
+        let mut ctrl = self.create_animation_controller(path);
+        ctrl.play();
+    }
+
+    #[allow(dead_code)]
+    pub fn pause_animation(&self, path: &Path) {
+        let mut ctrl = self.create_animation_controller(path);
+        ctrl.pause();
+    }
+
+    #[allow(dead_code)]
+    pub fn stop_animation(&self, path: &Path) {
+        let mut ctrl = self.create_animation_controller(path);
+        ctrl.stop();
     }
 }
 
@@ -382,6 +585,67 @@ mod tests {
         assert_eq!(mesh.positions.len(), 3);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_loader_export_and_animation_capabilities() {
+        let registry = LoaderRegistry::default_registry();
+        let dummy_mesh = MeshData::default();
+
+        let extensions = [
+            ("model.stl", false),
+            ("model.obj", false),
+            ("model.3mf", false),
+            ("model.gltf", true),
+            ("model.glb", true),
+            ("model.fbx", true),
+        ];
+
+        for (filename, expected_animation) in extensions {
+            let path = PathBuf::from(filename);
+            assert!(registry.can_export(&path), "Should support export for {}", filename);
+            assert_eq!(
+                registry.export_path(&path, &dummy_mesh),
+                Ok(()),
+                "Export should succeed (dummy) for {}",
+                filename
+            );
+            assert_eq!(
+                registry.has_animation(&path),
+                expected_animation,
+                "Animation flag mismatch for {}",
+                filename
+            );
+            // Calling animation controls should not panic
+            registry.play_animation(&path);
+            registry.pause_animation(&path);
+            registry.stop_animation(&path);
+        }
+
+        let unsupported = PathBuf::from("model.xyz");
+        assert!(!registry.can_export(&unsupported));
+        assert!(registry.export_path(&unsupported, &dummy_mesh).is_err());
+        assert!(!registry.has_animation(&unsupported));
+    }
+
+    #[test]
+    fn test_animation_controller_lifecycle() {
+        let mut controller = AnimationController::new(true);
+        assert_eq!(controller.state(), PlaybackState::Stopped);
+        assert!(controller.has_animation());
+
+        controller.play();
+        assert_eq!(controller.state(), PlaybackState::Playing);
+
+        controller.pause();
+        assert_eq!(controller.state(), PlaybackState::Paused);
+
+        controller.stop();
+        assert_eq!(controller.state(), PlaybackState::Stopped);
+
+        let mut no_anim_ctrl = AnimationController::new(false);
+        no_anim_ctrl.play(); // Refuses to play without animations
+        assert_eq!(no_anim_ctrl.state(), PlaybackState::Stopped);
     }
 }
 

@@ -367,4 +367,23 @@ impl Loader for FbxLoader {
             ..Default::default()
         })
     }
+
+    fn can_export(&self, path: &Path) -> bool {
+        if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            if ext.eq_ignore_ascii_case("fbx") {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn export(&self, path: &Path, _mesh: &MeshData) -> Result<(), String> {
+        println!("[FBX Format] Exporting mesh to '{}' (dummy print)", path.display());
+        Ok(())
+    }
+
+    fn supports_animation(&self) -> bool {
+        println!("[FBX Format] Format natively supports animation tracks (skeletal/skinning)");
+        true
+    }
 }
