@@ -44,3 +44,47 @@ pub fn trigger_file_dialog(
     }
 }
 
+pub fn trigger_export_dialog(
+    format: &str,
+    registry: Arc<LoaderRegistry>,
+    mesh: &MeshData,
+) -> bool {
+    let (filter_name, ext, default_name) = match format {
+        "stl" => ("Stereolithography (*.stl)", "stl", "model.stl"),
+        "obj" => ("Wavefront OBJ (*.obj)", "obj", "model.obj"),
+        "glb" => ("glTF Binary (*.glb)", "glb", "model.glb"),
+        "gltf" => ("glTF Embedded (*.gltf)", "gltf", "model.gltf"),
+        "3mf" => ("3D Manufacturing (*.3mf)", "3mf", "model.3mf"),
+        "fbx" => ("Autodesk FBX (*.fbx)", "fbx", "model.fbx"),
+        _ => return false,
+    };
+
+    let mut dialog = FileDialog::new()
+        .add_filter(filter_name, &[ext])
+        .set_file_name(default_name);
+
+    if let Some(ref source) = mesh.source_path {
+        if let Some(stem) = source.file_stem().and_then(|s| s.to_str()) {
+            dialog = dialog.set_file_name(&format!("{}.{}", stem, ext));
+        }
+        if let Some(parent) = source.parent() {
+            dialog = dialog.set_directory(parent);
+        }
+    }
+
+    if let Some(path) = dialog.save_file() {
+        match registry.export_path(&path, mesh) {
+            Ok(()) => {
+                println!("Successfully exported model to '{}'", path.display());
+                true
+            }
+            Err(e) => {
+                eprintln!("Failed to export model to '{}': {}", path.display(), e);
+                false
+            }
+        }
+    } else {
+        false
+    }
+}
+

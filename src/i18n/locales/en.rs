@@ -4,6 +4,7 @@ pub fn translate(key: TextKey) -> &'static str {
     match key {
         TextKey::Load3dModel => "Load 3D Model",
         TextKey::Unload3dModel => "Unload 3D Model",
+        TextKey::Export => "Export",
         TextKey::Grid => "Grid",
         TextKey::ShowGrid => "Show Grid",
         TextKey::Size => "Size",

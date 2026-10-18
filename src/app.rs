@@ -122,6 +122,15 @@ impl App {
         }
     }
 
+    fn trigger_export_dialog(&mut self, format: &str) {
+        if let Some(ref mesh) = self.current_mesh_data {
+            self.camera.dialog_open = true;
+            dialog::trigger_export_dialog(format, self.registry.clone(), mesh);
+            self.camera.dialog_open = false;
+            self.camera.last_dialog_close = Some(std::time::Instant::now());
+        }
+    }
+
     fn unload_model(&mut self) {
         self.has_model = false;
         self.current_mesh_data = None;
@@ -314,10 +323,12 @@ impl App {
             let open_dialog = ui_resp.open_file_dialog || menu_resp.open_file_dialog;
             let close_menu = ui_resp.close_menu_requested || menu_resp.close_menu_requested;
             let open_about = ui_resp.open_about_requested || menu_resp.open_about_requested;
+            let export_req = menu_resp.export_format_requested.clone();
             ui_resp = menu_resp;
             ui_resp.open_file_dialog = open_dialog;
             ui_resp.close_menu_requested = close_menu;
             ui_resp.open_about_requested = open_about;
+            ui_resp.export_format_requested = export_req;
         }
 
         overlay::render_about_dialog(ctx, &mut self.show_about, cfg.language);
@@ -333,6 +344,10 @@ impl App {
     fn apply_ui_response(&mut self, resp: UiResponse) {
         if resp.open_file_dialog {
             self.trigger_file_dialog();
+        }
+
+        if let Some(ref format) = resp.export_format_requested {
+            self.trigger_export_dialog(format);
         }
 
         if resp.unload_model_requested {

@@ -4,6 +4,7 @@ pub fn translate(key: TextKey) -> &'static str {
     match key {
         TextKey::Load3dModel => "3Dモデルを読み込む",
         TextKey::Unload3dModel => "3Dモデルを解除",
+        TextKey::Export => "エクスポート",
         TextKey::Grid => "グリッド",
         TextKey::ShowGrid => "グリッドを表示",
         TextKey::Size => "サイズ",

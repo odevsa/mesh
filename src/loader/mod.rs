@@ -39,6 +39,197 @@ pub struct MeshData {
     pub has_animation: bool,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct TriangleVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    #[allow(dead_code)]
+    pub uv: [f32; 2],
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct ExportTriangle {
+    pub vertices: [TriangleVertex; 3],
+    pub normal: [f32; 3],
+    #[allow(dead_code)]
+    pub color: Option<[f32; 4]>,
+}
+
+#[allow(dead_code)]
+pub fn compute_face_normal(v0: [f32; 3], v1: [f32; 3], v2: [f32; 3]) -> [f32; 3] {
+    let e1 = glam::Vec3::from(v1) - glam::Vec3::from(v0);
+    let e2 = glam::Vec3::from(v2) - glam::Vec3::from(v0);
+    let c = e1.cross(e2);
+    if c.length_squared() > 1e-20 {
+        c.normalize().into()
+    } else {
+        [0.0, 0.0, 1.0]
+    }
+}
+
+pub fn compute_normals(positions: &[[f32; 3]], indices: &[[u32; 3]]) -> Vec<[f32; 3]> {
+    let mut normals = vec![[0.0f32; 3]; positions.len()];
+    for tri in indices {
+        let i0 = tri[0] as usize;
+        let i1 = tri[1] as usize;
+        let i2 = tri[2] as usize;
+        if i0 < positions.len() && i1 < positions.len() && i2 < positions.len() {
+            let p0 = glam::Vec3::from(positions[i0]);
+            let p1 = glam::Vec3::from(positions[i1]);
+            let p2 = glam::Vec3::from(positions[i2]);
+
+            let v01 = p1 - p0;
+            let v02 = p2 - p0;
+            let v12 = p2 - p1;
+
+            let fnorm = v01.cross(v02);
+            let fn_len = fnorm.length();
+            if fn_len < 1e-6 {
+                continue;
+            }
+            let fn_norm = fnorm / fn_len;
+
+            let l01 = v01.length();
+            let l02 = v02.length();
+            let l12 = v12.length();
+
+            if l01 > 1e-6 && l02 > 1e-6 && l12 > 1e-6 {
+                let a0 = (v01.dot(v02) / (l01 * l02)).clamp(-1.0, 1.0).acos();
+                let a1 = ((-v01.dot(v12)) / (l01 * l12)).clamp(-1.0, 1.0).acos();
+                let a2 = ((-v02.dot(-v12)) / (l02 * l12)).clamp(-1.0, 1.0).acos();
+
+                let n0 = glam::Vec3::from(normals[i0]) + fn_norm * a0;
+                let n1 = glam::Vec3::from(normals[i1]) + fn_norm * a1;
+                let n2 = glam::Vec3::from(normals[i2]) + fn_norm * a2;
+
+                normals[i0] = n0.into();
+                normals[i1] = n1.into();
+                normals[i2] = n2.into();
+            }
+        }
+    }
+    for n in &mut normals {
+        let v = glam::Vec3::from(*n);
+        *n = if v.length_squared() > 1e-6 {
+            v.normalize().into()
+        } else {
+            [0.0, 0.0, 1.0]
+        };
+    }
+    normals
+}
+
+impl MeshData {
+    pub fn collect_triangles(&self) -> Vec<ExportTriangle> {
+        let mut triangles = Vec::new();
+        if !self.submeshes.is_empty() {
+            for sub in &self.submeshes {
+                for tri in &sub.indices {
+                    let i0 = tri[0] as usize;
+                    let i1 = tri[1] as usize;
+                    let i2 = tri[2] as usize;
+                    if i0 < sub.positions.len() && i1 < sub.positions.len() && i2 < sub.positions.len() {
+                        let p0 = sub.positions[i0];
+                        let mut p1 = sub.positions[i1];
+                        let mut p2 = sub.positions[i2];
+
+                        let n0 = if i0 < sub.normals.len() { sub.normals[i0] } else { [0.0, 0.0, 1.0] };
+                        let mut n1 = if i1 < sub.normals.len() { sub.normals[i1] } else { n0 };
+                        let mut n2 = if i2 < sub.normals.len() { sub.normals[i2] } else { n0 };
+
+                        let uv0 = if i0 < sub.uvs.len() { sub.uvs[i0] } else { [0.0, 0.0] };
+                        let mut uv1 = if i1 < sub.uvs.len() { sub.uvs[i1] } else { [0.0, 0.0] };
+                        let mut uv2 = if i2 < sub.uvs.len() { sub.uvs[i2] } else { [0.0, 0.0] };
+
+                        let e1 = glam::Vec3::from(p1) - glam::Vec3::from(p0);
+                        let e2 = glam::Vec3::from(p2) - glam::Vec3::from(p0);
+                        let c = e1.cross(e2);
+                        let avg_n = (glam::Vec3::from(n0) + glam::Vec3::from(n1) + glam::Vec3::from(n2)) / 3.0;
+
+                        let mut fnorm = if c.length_squared() > 1e-20 {
+                            c.normalize()
+                        } else if avg_n.length_squared() > 1e-20 {
+                            avg_n.normalize()
+                        } else {
+                            glam::Vec3::Z
+                        };
+
+                        // If geometric normal points opposite to vertex normals, flip normal and swap vertices
+                        if avg_n.length_squared() > 1e-20 && fnorm.dot(avg_n) < 0.0 {
+                            fnorm = -fnorm;
+                            std::mem::swap(&mut p1, &mut p2);
+                            std::mem::swap(&mut n1, &mut n2);
+                            std::mem::swap(&mut uv1, &mut uv2);
+                        }
+
+                        triangles.push(ExportTriangle {
+                            vertices: [
+                                TriangleVertex { position: p0, normal: n0, uv: uv0 },
+                                TriangleVertex { position: p1, normal: n1, uv: uv1 },
+                                TriangleVertex { position: p2, normal: n2, uv: uv2 },
+                            ],
+                            normal: fnorm.into(),
+                            color: sub.color,
+                        });
+                    }
+                }
+            }
+        } else {
+            for tri in &self.indices {
+                let i0 = tri[0] as usize;
+                let i1 = tri[1] as usize;
+                let i2 = tri[2] as usize;
+                if i0 < self.positions.len() && i1 < self.positions.len() && i2 < self.positions.len() {
+                    let p0 = self.positions[i0];
+                    let mut p1 = self.positions[i1];
+                    let mut p2 = self.positions[i2];
+
+                    let n0 = if i0 < self.normals.len() { self.normals[i0] } else { [0.0, 0.0, 1.0] };
+                    let mut n1 = if i1 < self.normals.len() { self.normals[i1] } else { n0 };
+                    let mut n2 = if i2 < self.normals.len() { self.normals[i2] } else { n0 };
+
+                    let uv0 = if i0 < self.uvs.len() { self.uvs[i0] } else { [0.0, 0.0] };
+                    let mut uv1 = if i1 < self.uvs.len() { self.uvs[i1] } else { [0.0, 0.0] };
+                    let mut uv2 = if i2 < self.uvs.len() { self.uvs[i2] } else { [0.0, 0.0] };
+
+                    let e1 = glam::Vec3::from(p1) - glam::Vec3::from(p0);
+                    let e2 = glam::Vec3::from(p2) - glam::Vec3::from(p0);
+                    let c = e1.cross(e2);
+                    let avg_n = (glam::Vec3::from(n0) + glam::Vec3::from(n1) + glam::Vec3::from(n2)) / 3.0;
+
+                    let mut fnorm = if c.length_squared() > 1e-20 {
+                        c.normalize()
+                    } else if avg_n.length_squared() > 1e-20 {
+                        avg_n.normalize()
+                    } else {
+                        glam::Vec3::Z
+                    };
+
+                    if avg_n.length_squared() > 1e-20 && fnorm.dot(avg_n) < 0.0 {
+                        fnorm = -fnorm;
+                        std::mem::swap(&mut p1, &mut p2);
+                        std::mem::swap(&mut n1, &mut n2);
+                        std::mem::swap(&mut uv1, &mut uv2);
+                    }
+
+                    triangles.push(ExportTriangle {
+                        vertices: [
+                            TriangleVertex { position: p0, normal: n0, uv: uv0 },
+                            TriangleVertex { position: p1, normal: n1, uv: uv1 },
+                            TriangleVertex { position: p2, normal: n2, uv: uv2 },
+                        ],
+                        normal: fnorm.into(),
+                        color: None,
+                    });
+                }
+            }
+        }
+        triangles
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlaybackState {
     #[default]
@@ -590,7 +781,16 @@ mod tests {
     #[test]
     fn test_loader_export_and_animation_capabilities() {
         let registry = LoaderRegistry::default_registry();
-        let dummy_mesh = MeshData::default();
+        let test_mesh = MeshData {
+            positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            normals: vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+            uvs: vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
+            indices: vec![[0, 1, 2]],
+            ..Default::default()
+        };
+
+        let temp_dir = std::env::temp_dir().join("mesh_export_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
 
         let extensions = [
             ("model.stl", false),
@@ -602,20 +802,28 @@ mod tests {
         ];
 
         for (filename, expected_animation) in extensions {
-            let path = PathBuf::from(filename);
+            let path = temp_dir.join(filename);
             assert!(registry.can_export(&path), "Should support export for {}", filename);
             assert_eq!(
-                registry.export_path(&path, &dummy_mesh),
+                registry.export_path(&path, &test_mesh),
                 Ok(()),
-                "Export should succeed (dummy) for {}",
+                "Export should succeed for {}",
                 filename
             );
+            assert!(path.exists(), "Exported file should exist: {}", path.display());
             assert_eq!(
                 registry.has_animation(&path),
                 expected_animation,
                 "Animation flag mismatch for {}",
                 filename
             );
+
+            // Test loading the exported file back
+            let loaded = registry.load_path(&path);
+            assert!(loaded.is_ok(), "Failed to load back exported file {}: {:?}", filename, loaded.err());
+            let loaded_mesh = loaded.unwrap();
+            assert!(!loaded_mesh.positions.is_empty(), "Loaded mesh should have positions for {}", filename);
+
             // Calling animation controls should not panic
             registry.play_animation(&path);
             registry.pause_animation(&path);
@@ -624,8 +832,10 @@ mod tests {
 
         let unsupported = PathBuf::from("model.xyz");
         assert!(!registry.can_export(&unsupported));
-        assert!(registry.export_path(&unsupported, &dummy_mesh).is_err());
+        assert!(registry.export_path(&unsupported, &test_mesh).is_err());
         assert!(!registry.has_animation(&unsupported));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
@@ -646,6 +856,100 @@ mod tests {
         let mut no_anim_ctrl = AnimationController::new(false);
         no_anim_ctrl.play(); // Refuses to play without animations
         assert_eq!(no_anim_ctrl.state(), PlaybackState::Stopped);
+    }
+
+    #[test]
+    fn test_suzanne_export_materials_and_orientation() {
+        let registry = LoaderRegistry::default_registry();
+        let suzanne_path = PathBuf::from("assets/models/Suzanne.glb");
+        if !suzanne_path.exists() {
+            return;
+        }
+
+        let orig = registry.load_path(&suzanne_path).expect("load Suzanne.glb");
+        assert!(!orig.submeshes.is_empty(), "original Suzanne should have submeshes");
+        assert!(orig.submeshes.iter().any(|s| s.color.is_some()), "original Suzanne should have material colors");
+
+        let temp_dir = std::env::temp_dir().join("mesh_suzanne_export_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let targets = [
+            ("suzanne_exp.glb", true),
+            ("suzanne_exp.gltf", true),
+            ("suzanne_exp.3mf", true),
+            ("suzanne_exp.fbx", true),
+            ("suzanne_exp.obj", true),
+            ("suzanne_exp.stl", false),
+        ];
+
+        for (filename, expect_materials) in targets {
+            let out_path = temp_dir.join(filename);
+            registry.export_path(&out_path, &orig).expect(&format!("export to {}", filename));
+            assert!(out_path.exists(), "exported file {} must exist", filename);
+
+            let reloaded = registry.load_path(&out_path).expect(&format!("reload {}", filename));
+            assert!(!reloaded.positions.is_empty(), "reloaded {} should have positions", filename);
+            assert!(!reloaded.submeshes.is_empty(), "reloaded {} should have submeshes", filename);
+
+            if expect_materials {
+                let has_material_colors = reloaded.submeshes.iter().any(|s| s.color.is_some());
+                assert!(has_material_colors, "reloaded {} must preserve material colors", filename);
+            }
+
+            if filename.ends_with(".3mf") {
+                // Verify that coincident vertices on UV seams are welded so the mesh is not cracked:
+                // Raw un-welded glTF vertices were 8169; welded vertices should be <= 7700.
+                assert!(
+                    reloaded.positions.len() <= 7700,
+                    "3MF should weld UV seam duplicate vertices: got {} vertices (expected <= 7700)",
+                    reloaded.positions.len()
+                );
+
+                // Verify 3MF archive structure for Blender ThreeMF_io and OrcaSlicer compatibility
+                let file = std::fs::File::open(&out_path).unwrap();
+                let mut zip = zip::ZipArchive::new(file).unwrap();
+                use std::io::Read;
+
+                let mut ct_str = String::new();
+                zip.by_name("[Content_Types].xml").unwrap().read_to_string(&mut ct_str).unwrap();
+                assert!(ct_str.contains("application/vnd.ms-package.3dmanufacturing-3dmodel+xml"), "3MF must have valid model MIME type with '+'");
+
+                let mut proj_str = String::new();
+                zip.by_name("Metadata/project_settings.config").unwrap().read_to_string(&mut proj_str).unwrap();
+                assert!(proj_str.contains("filament_colour"), "3MF must include filament_colour for OrcaSlicer");
+
+                let mut model_str = String::new();
+                zip.by_name("3D/3dmodel.model").unwrap().read_to_string(&mut model_str).unwrap();
+                assert!(model_str.contains("paint_color="), "3MF must have paint_color attributes on triangles for OrcaSlicer");
+                assert!(model_str.contains("xmlns:m="), "3MF must declare materials extension namespace");
+            }
+
+            if filename.ends_with(".fbx") {
+                let fbx_content = std::fs::read_to_string(&out_path).unwrap();
+                assert!(
+                    fbx_content.contains("\"UnitScaleFactor\", \"double\", \"Number\", \"\", 100.0"),
+                    "FBX must set UnitScaleFactor to 100.0 for meter scale in Blender"
+                );
+            }
+
+            if filename.ends_with(".glb") {
+                // Verify orientation consistency: bounding box max Z and Y must be close to original
+                let orig_min_z = orig.positions.iter().map(|p| p[2]).fold(f32::INFINITY, f32::min);
+                let orig_max_z = orig.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+                let rel_min_z = reloaded.positions.iter().map(|p| p[2]).fold(f32::INFINITY, f32::min);
+                let rel_max_z = reloaded.positions.iter().map(|p| p[2]).fold(f32::NEG_INFINITY, f32::max);
+
+                assert!((orig_min_z - rel_min_z).abs() < 0.05, "Z min orientation mismatch: {} vs {}", orig_min_z, rel_min_z);
+                assert!((orig_max_z - rel_max_z).abs() < 0.05, "Z max orientation mismatch: {} vs {}", orig_max_z, rel_max_z);
+            }
+        }
+
+        let _ = std::fs::copy(temp_dir.join("suzanne_exp.3mf"), "/home/odevsa/Suzanne.3mf");
+        let _ = std::fs::copy(temp_dir.join("suzanne_exp.fbx"), "/home/odevsa/Suzanne.fbx");
+        let _ = std::fs::copy(temp_dir.join("suzanne_exp.obj"), "/home/odevsa/Suzanne.obj");
+        let _ = std::fs::copy(temp_dir.join("suzanne_exp.mtl"), "/home/odevsa/Suzanne.mtl");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
 

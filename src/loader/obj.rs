@@ -270,8 +270,115 @@ impl Loader for ObjLoader {
         false
     }
 
-    fn export(&self, path: &Path, _mesh: &MeshData) -> Result<(), String> {
-        println!("[OBJ Format] Exporting mesh to '{}' (dummy print)", path.display());
+    fn export(&self, path: &Path, mesh: &MeshData) -> Result<(), String> {
+        use std::io::Write;
+        let file = std::fs::File::create(path).map_err(|e| format!("create obj file failed: {}", e))?;
+        let mut writer = std::io::BufWriter::new(file);
+
+        writeln!(writer, "# Wavefront OBJ exported by Mesh").map_err(|e| format!("write obj: {}", e))?;
+
+        let mtl_path = path.with_extension("mtl");
+        let mtl_filename = mtl_path.file_name().and_then(|s| s.to_str()).unwrap_or("model.mtl");
+        let has_materials = mesh.submeshes.iter().any(|s| s.color.is_some());
+
+        if has_materials {
+            if let Ok(mtl_file) = std::fs::File::create(&mtl_path) {
+                let mut mtl_writer = std::io::BufWriter::new(mtl_file);
+                let _ = writeln!(mtl_writer, "# Wavefront MTL exported by Mesh");
+                for (idx, sub) in mesh.submeshes.iter().enumerate() {
+                    if let Some(c) = sub.color {
+                        let _ = writeln!(mtl_writer, "newmtl Material_{}", idx + 1);
+                        let _ = writeln!(mtl_writer, "Ns 250.000000");
+                        let _ = writeln!(mtl_writer, "Ka 1.000000 1.000000 1.000000");
+                        let _ = writeln!(mtl_writer, "Kd {:.4} {:.4} {:.4}", c[0], c[1], c[2]);
+                        let _ = writeln!(mtl_writer, "Ks 0.500000 0.500000 0.500000");
+                        let _ = writeln!(mtl_writer, "Ni 1.500000");
+                        let _ = writeln!(mtl_writer, "d {:.4}", c[3]);
+                        let _ = writeln!(mtl_writer, "illum 2");
+                    }
+                }
+            }
+            let _ = writeln!(writer, "mtllib {}", mtl_filename);
+        }
+
+        let mut v_offset = 1usize;
+
+        if !mesh.submeshes.is_empty() {
+            for (idx, sub) in mesh.submeshes.iter().enumerate() {
+                writeln!(writer, "g Submesh_{}", idx + 1).map_err(|e| format!("write: {}", e))?;
+                if sub.color.is_some() {
+                    writeln!(writer, "usemtl Material_{}", idx + 1).map_err(|e| format!("write: {}", e))?;
+                }
+
+                for p in &sub.positions {
+                    // Coordinates back to OBJ space (Y-up)
+                    writeln!(writer, "v {:.6} {:.6} {:.6}", p[0], p[2], -p[1]).map_err(|e| format!("write: {}", e))?;
+                }
+                for n in &sub.normals {
+                    writeln!(writer, "vn {:.6} {:.6} {:.6}", n[0], n[2], -n[1]).map_err(|e| format!("write: {}", e))?;
+                }
+                for uv in &sub.uvs {
+                    writeln!(writer, "vt {:.6} {:.6}", uv[0], uv[1]).map_err(|e| format!("write: {}", e))?;
+                }
+
+                let has_n = !sub.normals.is_empty();
+                let has_uv = !sub.uvs.is_empty();
+
+                writeln!(writer, "s 1").map_err(|e| format!("write: {}", e))?;
+
+                for tri in &sub.indices {
+                    let v0 = v_offset + tri[0] as usize;
+                    let v1 = v_offset + tri[1] as usize;
+                    let v2 = v_offset + tri[2] as usize;
+
+                    if has_uv && has_n {
+                        writeln!(writer, "f {}/{}/{} {}/{}/{} {}/{}/{}", v0, v0, v0, v1, v1, v1, v2, v2, v2).map_err(|e| format!("write: {}", e))?;
+                    } else if has_n {
+                        writeln!(writer, "f {}//{} {}//{} {}//{}", v0, v0, v1, v1, v2, v2).map_err(|e| format!("write: {}", e))?;
+                    } else if has_uv {
+                        writeln!(writer, "f {}/{} {}/{} {}/{}", v0, v0, v1, v1, v2, v2).map_err(|e| format!("write: {}", e))?;
+                    } else {
+                        writeln!(writer, "f {} {} {}", v0, v1, v2).map_err(|e| format!("write: {}", e))?;
+                    }
+                }
+
+                v_offset += sub.positions.len();
+            }
+        } else {
+            for p in &mesh.positions {
+                writeln!(writer, "v {:.6} {:.6} {:.6}", p[0], p[2], -p[1]).map_err(|e| format!("write: {}", e))?;
+            }
+            for n in &mesh.normals {
+                writeln!(writer, "vn {:.6} {:.6} {:.6}", n[0], n[2], -n[1]).map_err(|e| format!("write: {}", e))?;
+            }
+            for uv in &mesh.uvs {
+                writeln!(writer, "vt {:.6} {:.6}", uv[0], uv[1]).map_err(|e| format!("write: {}", e))?;
+            }
+
+            let has_n = !mesh.normals.is_empty();
+            let has_uv = !mesh.uvs.is_empty();
+
+            writeln!(writer, "s 1").map_err(|e| format!("write: {}", e))?;
+
+            for tri in &mesh.indices {
+                let v0 = 1 + tri[0] as usize;
+                let v1 = 1 + tri[1] as usize;
+                let v2 = 1 + tri[2] as usize;
+
+                if has_uv && has_n {
+                    writeln!(writer, "f {}/{}/{} {}/{}/{} {}/{}/{}", v0, v0, v0, v1, v1, v1, v2, v2, v2).map_err(|e| format!("write: {}", e))?;
+                } else if has_n {
+                    writeln!(writer, "f {}//{} {}//{} {}//{}", v0, v0, v1, v1, v2, v2).map_err(|e| format!("write: {}", e))?;
+                } else if has_uv {
+                    writeln!(writer, "f {}/{} {}/{} {}/{}", v0, v0, v1, v1, v2, v2).map_err(|e| format!("write: {}", e))?;
+                } else {
+                    writeln!(writer, "f {} {} {}", v0, v1, v2).map_err(|e| format!("write: {}", e))?;
+                }
+            }
+        }
+
+        writer.flush().map_err(|e| format!("flush: {}", e))?;
+        println!("[OBJ Format] Successfully exported model to '{}'", path.display());
         Ok(())
     }
 

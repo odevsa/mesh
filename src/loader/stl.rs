@@ -80,8 +80,34 @@ impl Loader for StlLoader {
         false
     }
 
-    fn export(&self, path: &Path, _mesh: &MeshData) -> Result<(), String> {
-        println!("[STL Format] Exporting mesh to '{}' (dummy print)", path.display());
+    fn export(&self, path: &Path, mesh: &MeshData) -> Result<(), String> {
+        use std::io::Write;
+        let triangles = mesh.collect_triangles();
+        let file = std::fs::File::create(path).map_err(|e| format!("create stl file failed: {}", e))?;
+        let mut writer = std::io::BufWriter::new(file);
+
+        let mut header = [0u8; 80];
+        let desc = b"Binary STL exported by Mesh";
+        header[..desc.len()].copy_from_slice(desc);
+        writer.write_all(&header).map_err(|e| format!("write header: {}", e))?;
+
+        let count = triangles.len() as u32;
+        writer.write_all(&count.to_le_bytes()).map_err(|e| format!("write count: {}", e))?;
+
+        for tri in &triangles {
+            for val in &tri.normal {
+                writer.write_all(&val.to_le_bytes()).map_err(|e| format!("write normal: {}", e))?;
+            }
+            for v in &tri.vertices {
+                for val in &v.position {
+                    writer.write_all(&val.to_le_bytes()).map_err(|e| format!("write vertex: {}", e))?;
+                }
+            }
+            writer.write_all(&0u16.to_le_bytes()).map_err(|e| format!("write attr: {}", e))?;
+        }
+
+        writer.flush().map_err(|e| format!("flush: {}", e))?;
+        println!("[STL Format] Successfully exported {} triangles to '{}'", triangles.len(), path.display());
         Ok(())
     }
 

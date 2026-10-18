@@ -310,6 +310,9 @@ mod tests {
         assert_eq!(Language::ZhTw.t(TextKey::About), "關於");
         assert_eq!(Language::Ru.t(TextKey::About), "О программе");
         assert_eq!(Language::Ja.t(TextKey::About), "情報");
+
+        assert_eq!(Language::En.t(TextKey::Export), "Export");
+        assert_eq!(Language::PtBr.t(TextKey::Export), "Exportar");
     }
 
     #[test]

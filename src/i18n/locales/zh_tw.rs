@@ -4,6 +4,7 @@ pub fn translate(key: TextKey) -> &'static str {
     match key {
         TextKey::Load3dModel => "載入3D模型",
         TextKey::Unload3dModel => "卸載3D模型",
+        TextKey::Export => "匯出",
         TextKey::Grid => "網格",
         TextKey::ShowGrid => "顯示網格",
         TextKey::Size => "大小",

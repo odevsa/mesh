@@ -25,6 +25,62 @@ fn parse_hex_color(s: &str) -> Option<[f32; 4]> {
     Some([r, g, b, a])
 }
 
+fn to_hex_color(c: [f32; 4]) -> String {
+    let to_srgb = |v: f32| -> u8 {
+        let v = v.clamp(0.0, 1.0);
+        let s = if v <= 0.0031308 {
+            v * 12.92
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        };
+        (s.clamp(0.0, 1.0) * 255.0).round() as u8
+    };
+    let r = to_srgb(c[0]);
+    let g = to_srgb(c[1]);
+    let b = to_srgb(c[2]);
+    let a = (c[3].clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a)
+}
+
+fn to_hex_color_rgb(c: [f32; 4]) -> String {
+    let to_srgb = |v: f32| -> u8 {
+        let v = v.clamp(0.0, 1.0);
+        let s = if v <= 0.0031308 {
+            v * 12.92
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        };
+        (s.clamp(0.0, 1.0) * 255.0).round() as u8
+    };
+    let r = to_srgb(c[0]);
+    let g = to_srgb(c[1]);
+    let b = to_srgb(c[2]);
+    format!("#{:02X}{:02X}{:02X}", r, g, b)
+}
+
+fn orca_filament_code(idx: usize) -> &'static str {
+    match idx {
+        0 => "4",
+        1 => "8",
+        2 => "0C",
+        3 => "1C",
+        4 => "2C",
+        5 => "3C",
+        6 => "4C",
+        7 => "5C",
+        8 => "6C",
+        9 => "7C",
+        10 => "8C",
+        11 => "9C",
+        12 => "AC",
+        13 => "BC",
+        14 => "CC",
+        15 => "DC",
+        16 => "EC",
+        _ => "4",
+    }
+}
+
 fn resolve_paint_color(s: &str, filament_colors: &[[f32; 4]]) -> Option<[f32; 4]> {
     let s = s.trim();
     if s.is_empty() { return None; }
@@ -152,7 +208,8 @@ impl Loader for ThreemfLoader {
 
                         if name.ends_with(b"basematerials") || name.ends_with(b"colorgroup") {
                             for attr in e.attributes().with_checks(false).flatten() {
-                                if attr.key.into_inner().ends_with(b"id") {
+                                let key = attr.key.into_inner();
+                                if key == b"id" || key.ends_with(b":id") {
                                     if let Ok(val) = attr.unescape_value() {
                                         current_resource_id = val.parse::<u32>().ok();
                                     }
@@ -379,8 +436,172 @@ impl Loader for ThreemfLoader {
         false
     }
 
-    fn export(&self, path: &Path, _mesh: &MeshData) -> Result<(), String> {
-        println!("[3MF Format] Exporting mesh to '{}' (dummy print)", path.display());
+    fn export(&self, path: &Path, mesh: &MeshData) -> Result<(), String> {
+        let fallback_submesh;
+        let submeshes: &[SubMesh] = if !mesh.submeshes.is_empty() {
+            &mesh.submeshes
+        } else if !mesh.positions.is_empty() && !mesh.indices.is_empty() {
+            fallback_submesh = vec![SubMesh {
+                positions: mesh.positions.clone(),
+                normals: mesh.normals.clone(),
+                uvs: mesh.uvs.clone(),
+                indices: mesh.indices.clone(),
+                color: None,
+                texture: None,
+            }];
+            &fallback_submesh
+        } else {
+            return Err("Mesh contains no geometry to export".into());
+        };
+
+        let file = std::fs::File::create(path).map_err(|e| format!("create 3mf file failed: {}", e))?;
+        let mut zip = zip::ZipWriter::new(file);
+
+        let options = zip::write::FileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        use std::io::Write;
+
+        // 1. [Content_Types].xml
+        zip.start_file("[Content_Types].xml", options).map_err(|e| format!("zip err: {}", e))?;
+        let content_types = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\n  <Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\n  <Default Extension=\"model\" ContentType=\"application/vnd.ms-package.3dmanufacturing-3dmodel+xml\"/>\n  <Default Extension=\"config\" ContentType=\"application/xml\"/>\n</Types>";
+        zip.write_all(content_types.as_bytes()).map_err(|e| format!("write: {}", e))?;
+
+        // 2. _rels/.rels
+        zip.start_file("_rels/.rels", options).map_err(|e| format!("zip err: {}", e))?;
+        let rels = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\n  <Relationship Target=\"/3D/3dmodel.model\" Id=\"rel0\" Type=\"http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel\"/>\n</Relationships>";
+        zip.write_all(rels.as_bytes()).map_err(|e| format!("write: {}", e))?;
+
+        // 3. Metadata/project_settings.config (for OrcaSlicer / BambuStudio color palette)
+        zip.start_file("Metadata/project_settings.config", options).map_err(|e| format!("zip err: {}", e))?;
+        let mut filament_colors_json = String::from("{\n  \"filament_colour\": [");
+        for (idx, sub) in submeshes.iter().enumerate() {
+            let color = sub.color.unwrap_or([0.8, 0.8, 0.8, 1.0]);
+            let hex = to_hex_color_rgb(color);
+            if idx > 0 {
+                filament_colors_json.push_str(", ");
+            }
+            filament_colors_json.push_str(&format!("\"{}\"", hex));
+        }
+        filament_colors_json.push_str("],\n  \"default_filament_colour\": [");
+        for (idx, sub) in submeshes.iter().enumerate() {
+            let color = sub.color.unwrap_or([0.8, 0.8, 0.8, 1.0]);
+            let hex = to_hex_color_rgb(color);
+            if idx > 0 {
+                filament_colors_json.push_str(", ");
+            }
+            filament_colors_json.push_str(&format!("\"{}\"", hex));
+        }
+        filament_colors_json.push_str("]\n}");
+        zip.write_all(filament_colors_json.as_bytes()).map_err(|e| format!("write: {}", e))?;
+
+        // 4. Metadata/model_settings.config (for OrcaSlicer / BambuStudio part configuration)
+        zip.start_file("Metadata/model_settings.config", options).map_err(|e| format!("zip err: {}", e))?;
+        let model_settings = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config>\n  <object id=\"1\">\n    <metadata key=\"name\" value=\"Model\"/>\n    <metadata key=\"extruder\" value=\"1\"/>\n    <part id=\"1\" subtype=\"normal_part\">\n      <metadata key=\"name\" value=\"Model\"/>\n      <metadata key=\"matrix\" value=\"1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1\"/>\n    </part>\n  </object>\n</config>";
+        zip.write_all(model_settings.as_bytes()).map_err(|e| format!("write: {}", e))?;
+
+        // 5. 3D/3dmodel.model
+        zip.start_file("3D/3dmodel.model", options).map_err(|e| format!("zip err: {}", e))?;
+
+        let mut total_tris = 0usize;
+        let mut total_verts = 0usize;
+        for sub in submeshes {
+            total_verts += sub.positions.len();
+            total_tris += sub.indices.len();
+        }
+
+        let mut model_xml = String::with_capacity(total_verts * 60 + total_tris * 85 + 1500);
+        model_xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model unit=\"meter\" xml:lang=\"en-US\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\" xmlns:m=\"http://schemas.microsoft.com/3dmanufacturing/material/2015/02\">\n  <metadata name=\"Application\">Mesh</metadata>\n  <resources>\n");
+
+        // Write BaseMaterials resource (id="2") linked to PBR display properties (id="4")
+        model_xml.push_str("    <basematerials id=\"2\" displaypropertiesid=\"4\">\n");
+        for (idx, sub) in submeshes.iter().enumerate() {
+            let color = sub.color.unwrap_or([0.8, 0.8, 0.8, 1.0]);
+            let hex = to_hex_color(color);
+            model_xml.push_str(&format!(
+                "      <base name=\"Material_{}\" displaycolor=\"{}\" />\n",
+                idx + 1, hex
+            ));
+        }
+        model_xml.push_str("    </basematerials>\n");
+
+        // Write Materials extension colorgroup resource (id="3")
+        model_xml.push_str("    <m:colorgroup id=\"3\">\n");
+        for sub in submeshes {
+            let color = sub.color.unwrap_or([0.8, 0.8, 0.8, 1.0]);
+            let hex = to_hex_color(color);
+            model_xml.push_str(&format!(
+                "      <m:color color=\"{}\" />\n",
+                hex
+            ));
+        }
+        model_xml.push_str("    </m:colorgroup>\n");
+
+        // Write PBR metallic display properties (id="4") matching standard roughness/metallic factors
+        model_xml.push_str("    <m:pbmetallicdisplayproperties id=\"4\">\n");
+        for (idx, _) in submeshes.iter().enumerate() {
+            model_xml.push_str(&format!(
+                "      <m:pbmetallic name=\"Material_{}\" metallicness=\"0.0\" roughness=\"0.5\" />\n",
+                idx + 1
+            ));
+        }
+        model_xml.push_str("    </m:pbmetallicdisplayproperties>\n");
+
+        model_xml.push_str("    <object id=\"1\" pid=\"2\" pindex=\"0\" type=\"model\">\n      <mesh>\n        <vertices>\n");
+
+        // Deduplicate coincident 3D vertex positions across seams (e.g. UV seams)
+        // so that the 3MF mesh remains a continuous, watertight solid surface,
+        // while preserving separation only for parts that are physically disconnected in 3D space.
+        let mut unique_vertices: Vec<[f32; 3]> = Vec::with_capacity(total_verts);
+        let mut vertex_map: HashMap<(i64, i64, i64), u32> = HashMap::with_capacity(total_verts);
+
+        let mut get_vertex_idx = |p: [f32; 3]| -> u32 {
+            let key = (
+                (p[0] * 10000.0).round() as i64,
+                (p[1] * 10000.0).round() as i64,
+                (p[2] * 10000.0).round() as i64,
+            );
+            *vertex_map.entry(key).or_insert_with(|| {
+                let idx = unique_vertices.len() as u32;
+                unique_vertices.push(p);
+                idx
+            })
+        };
+
+        let mut triangles_xml = String::with_capacity(total_tris * 90);
+        for (mat_idx, sub) in submeshes.iter().enumerate() {
+            let orca_code = orca_filament_code(mat_idx);
+            for tri in &sub.indices {
+                let i0 = tri[0] as usize;
+                let i1 = tri[1] as usize;
+                let i2 = tri[2] as usize;
+                if i0 < sub.positions.len() && i1 < sub.positions.len() && i2 < sub.positions.len() {
+                    let v0 = get_vertex_idx(sub.positions[i0]);
+                    let v1 = get_vertex_idx(sub.positions[i1]);
+                    let v2 = get_vertex_idx(sub.positions[i2]);
+                    triangles_xml.push_str(&format!(
+                        "          <triangle v1=\"{}\" v2=\"{}\" v3=\"{}\" pid=\"2\" p1=\"{}\" paint_color=\"{}\" />\n",
+                        v0, v1, v2, mat_idx, orca_code
+                    ));
+                }
+            }
+        }
+
+        for p in &unique_vertices {
+            model_xml.push_str(&format!(
+                "          <vertex x=\"{:.6}\" y=\"{:.6}\" z=\"{:.6}\" />\n",
+                p[0], p[1], p[2]
+            ));
+        }
+
+        model_xml.push_str("        </vertices>\n        <triangles>\n");
+        model_xml.push_str(&triangles_xml);
+        model_xml.push_str("        </triangles>\n      </mesh>\n    </object>\n  </resources>\n  <build>\n    <item objectid=\"1\" />\n  </build>\n</model>");
+
+        zip.write_all(model_xml.as_bytes()).map_err(|e| format!("write: {}", e))?;
+        zip.finish().map_err(|e| format!("zip finish: {}", e))?;
+
+        println!("[3MF Format] Successfully exported {} triangles with materials to '{}'", total_tris, path.display());
         Ok(())
     }
 

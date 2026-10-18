@@ -5,6 +5,7 @@ use egui::{Context, Pos2};
 #[derive(Default)]
 pub struct UiResponse {
     pub open_file_dialog: bool,
+    pub export_format_requested: Option<String>,
     pub unload_model_requested: bool,
     pub reset_camera_requested: bool,
     pub reset_defaults_requested: bool,
@@ -51,6 +52,10 @@ pub fn render_context_menu(
     let is_wide = ctx.data(|d| d.get_temp::<bool>(wide_mode_id).unwrap_or(false));
     let menu_width = if is_wide { 230.0 } else { 170.0 };
 
+    let export_menu_open_id = egui::Id::new("export_submenu_open");
+    let mut submenu_open = ctx.data(|d| d.get_temp::<bool>(export_menu_open_id).unwrap_or(false));
+    let mut export_btn_rect = egui::Rect::NOTHING;
+
     let mut resp = UiResponse::default();
     let lang = cfg.language;
 
@@ -78,6 +83,18 @@ pub fn render_context_menu(
                         if menu_button_enabled(ui, has_model, lang.t(TextKey::Unload3dModel)).clicked() {
                             resp.unload_model_requested = true;
                             resp.close_menu_requested = true;
+                        }
+
+                        let mut export_btn = egui::Button::new(lang.t(TextKey::Export))
+                            .right_text("⏵")
+                            .frame_when_inactive(false);
+                        if submenu_open {
+                            export_btn = export_btn.fill(ui.visuals().widgets.open.weak_bg_fill);
+                        }
+                        let export_resp = ui.add_enabled(has_model, export_btn);
+                        export_btn_rect = export_resp.rect;
+                        if has_model && (export_resp.hovered() || export_resp.clicked()) {
+                            submenu_open = true;
                         }
 
                         ui.separator();
@@ -309,13 +326,93 @@ pub fn render_context_menu(
                 });
         });
 
+    let mut sub_rect = egui::Rect::NOTHING;
+    if submenu_open && has_model {
+        let submenu_width = 205.0;
+        let screen_rect = ctx.content_rect();
+        let mut sub_pos = egui::pos2(area_resp.response.rect.right() + 1.0, export_btn_rect.min.y);
+        if sub_pos.x + submenu_width > screen_rect.max.x {
+            sub_pos.x = (area_resp.response.rect.left() - submenu_width - 1.0).max(4.0);
+        }
+        let estimated_h = 170.0;
+        if sub_pos.y + estimated_h > screen_rect.max.y {
+            sub_pos.y = (screen_rect.max.y - estimated_h - 4.0).max(4.0);
+        }
+
+        let sub_area_resp = egui::Area::new(egui::Id::new("export_submenu"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(sub_pos)
+            .constrain(true)
+            .show(ctx, |ui| {
+                ui.set_width(submenu_width);
+                egui::Frame::menu(&ctx.global_style())
+                    .shadow(egui::Shadow::NONE)
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                            ui.spacing_mut().button_padding = egui::vec2(8.0, 4.0);
+                            ui.visuals_mut().widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                            ui.visuals_mut().widgets.active.bg_stroke = egui::Stroke::NONE;
+
+                            if menu_button(ui, "STL (*.stl)").clicked() {
+                                resp.export_format_requested = Some("stl".into());
+                                resp.close_menu_requested = true;
+                                submenu_open = false;
+                            }
+                            if menu_button(ui, "Wavefront OBJ (*.obj)").clicked() {
+                                resp.export_format_requested = Some("obj".into());
+                                resp.close_menu_requested = true;
+                                submenu_open = false;
+                            }
+                            if menu_button(ui, "glTF Binary (*.glb)").clicked() {
+                                resp.export_format_requested = Some("glb".into());
+                                resp.close_menu_requested = true;
+                                submenu_open = false;
+                            }
+                            if menu_button(ui, "glTF Embedded (*.gltf)").clicked() {
+                                resp.export_format_requested = Some("gltf".into());
+                                resp.close_menu_requested = true;
+                                submenu_open = false;
+                            }
+                            if menu_button(ui, "3D Manufacturing (*.3mf)").clicked() {
+                                resp.export_format_requested = Some("3mf".into());
+                                resp.close_menu_requested = true;
+                                submenu_open = false;
+                            }
+                            if menu_button(ui, "Autodesk FBX (*.fbx)").clicked() {
+                                resp.export_format_requested = Some("fbx".into());
+                                resp.close_menu_requested = true;
+                                submenu_open = false;
+                            }
+                        });
+                    });
+            });
+        sub_rect = sub_area_resp.response.rect;
+    }
+
+    if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
+        if area_resp.response.rect.contains(pos)
+            && (pos.y < export_btn_rect.min.y - 4.0 || pos.y > export_btn_rect.max.y + 4.0)
+        {
+            submenu_open = false;
+        }
+    }
+
     if ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))
         && let Some(pos) = ctx.input(|i| i.pointer.interact_pos())
         && !area_resp.response.rect.contains(pos)
+        && !sub_rect.contains(pos)
         && !ctx.is_pointer_over_egui()
     {
         resp.close_menu_requested = true;
+        submenu_open = false;
     }
+
+    if resp.close_menu_requested {
+        submenu_open = false;
+    }
+
+    ctx.data_mut(|d| d.insert_temp(export_menu_open_id, submenu_open));
 
     resp
 }

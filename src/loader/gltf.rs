@@ -1,4 +1,4 @@
-use super::{Loader, MeshData, SubMesh, TextureData};
+use super::{compute_normals, Loader, MeshData, SubMesh, TextureData};
 use std::path::Path;
 use std::io::Read;
 use std::sync::Arc;
@@ -259,8 +259,281 @@ impl Loader for GltfLoader {
         false
     }
 
-    fn export(&self, path: &Path, _mesh: &MeshData) -> Result<(), String> {
-        println!("[glTF Format] Exporting mesh to '{}' (dummy print)", path.display());
+    fn export(&self, path: &Path, mesh: &MeshData) -> Result<(), String> {
+        let fallback_submesh;
+        let submeshes: &[SubMesh] = if !mesh.submeshes.is_empty() {
+            &mesh.submeshes
+        } else if !mesh.positions.is_empty() && !mesh.indices.is_empty() {
+            let n = if !mesh.normals.is_empty() {
+                mesh.normals.clone()
+            } else {
+                compute_normals(&mesh.positions, &mesh.indices)
+            };
+            let u = if !mesh.uvs.is_empty() {
+                mesh.uvs.clone()
+            } else {
+                vec![[0.0, 0.0]; mesh.positions.len()]
+            };
+            fallback_submesh = vec![SubMesh {
+                positions: mesh.positions.clone(),
+                normals: n,
+                uvs: u,
+                indices: mesh.indices.clone(),
+                color: None,
+                texture: None,
+            }];
+            &fallback_submesh
+        } else {
+            return Err("Mesh contains no geometry to export".into());
+        };
+
+        let is_glb = path.extension().and_then(|s| s.to_str()).map(|e| e.eq_ignore_ascii_case("glb")).unwrap_or(true);
+
+        let mut bin_data = Vec::new();
+        let mut buffer_views = Vec::new();
+        let mut accessors = Vec::new();
+        let mut primitives = Vec::new();
+        let mut materials = Vec::new();
+
+        for (mat_idx, sub) in submeshes.iter().enumerate() {
+            if sub.positions.is_empty() || sub.indices.is_empty() {
+                continue;
+            }
+
+            let num_verts = sub.positions.len();
+            let num_indices = sub.indices.len() * 3;
+
+            let mut min_pos = [f32::INFINITY; 3];
+            let mut max_pos = [f32::NEG_INFINITY; 3];
+
+            // 1. Positions - Convert Mesh viewer (+Z up, -Y front) to glTF (+Y up, +Z out)
+            while bin_data.len() % 4 != 0 {
+                bin_data.push(0);
+            }
+            let pos_offset = bin_data.len();
+            for p in &sub.positions {
+                let p_gltf = [p[0], p[2], -p[1]];
+                min_pos[0] = min_pos[0].min(p_gltf[0]);
+                min_pos[1] = min_pos[1].min(p_gltf[1]);
+                min_pos[2] = min_pos[2].min(p_gltf[2]);
+                max_pos[0] = max_pos[0].max(p_gltf[0]);
+                max_pos[1] = max_pos[1].max(p_gltf[1]);
+                max_pos[2] = max_pos[2].max(p_gltf[2]);
+
+                bin_data.extend_from_slice(&p_gltf[0].to_le_bytes());
+                bin_data.extend_from_slice(&p_gltf[1].to_le_bytes());
+                bin_data.extend_from_slice(&p_gltf[2].to_le_bytes());
+            }
+            let pos_len = bin_data.len() - pos_offset;
+            let pos_view_idx = buffer_views.len();
+            buffer_views.push(serde_json::json!({
+                "buffer": 0,
+                "byteOffset": pos_offset,
+                "byteLength": pos_len,
+                "target": 34962
+            }));
+            let pos_acc_idx = accessors.len();
+            accessors.push(serde_json::json!({
+                "bufferView": pos_view_idx,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": num_verts,
+                "type": "VEC3",
+                "min": min_pos,
+                "max": max_pos
+            }));
+
+            // 2. Normals - Convert to glTF (+Y up, +Z out)
+            let sub_normals: Vec<[f32; 3]> = if sub.normals.len() == sub.positions.len() {
+                sub.normals.clone()
+            } else {
+                compute_normals(&sub.positions, &sub.indices)
+            };
+
+            while bin_data.len() % 4 != 0 {
+                bin_data.push(0);
+            }
+            let norm_offset = bin_data.len();
+            for n in &sub_normals {
+                let n_gltf = [n[0], n[2], -n[1]];
+                bin_data.extend_from_slice(&n_gltf[0].to_le_bytes());
+                bin_data.extend_from_slice(&n_gltf[1].to_le_bytes());
+                bin_data.extend_from_slice(&n_gltf[2].to_le_bytes());
+            }
+            let norm_len = bin_data.len() - norm_offset;
+            let norm_view_idx = buffer_views.len();
+            buffer_views.push(serde_json::json!({
+                "buffer": 0,
+                "byteOffset": norm_offset,
+                "byteLength": norm_len,
+                "target": 34962
+            }));
+            let norm_acc_idx = accessors.len();
+            accessors.push(serde_json::json!({
+                "bufferView": norm_view_idx,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": num_verts,
+                "type": "VEC3"
+            }));
+
+            // 3. TexCoords (UVs)
+            while bin_data.len() % 4 != 0 {
+                bin_data.push(0);
+            }
+            let uv_offset = bin_data.len();
+            for i in 0..num_verts {
+                let uv = sub.uvs.get(i).copied().unwrap_or([0.0, 0.0]);
+                bin_data.extend_from_slice(&uv[0].to_le_bytes());
+                bin_data.extend_from_slice(&uv[1].to_le_bytes());
+            }
+            let uv_len = bin_data.len() - uv_offset;
+            let uv_view_idx = buffer_views.len();
+            buffer_views.push(serde_json::json!({
+                "buffer": 0,
+                "byteOffset": uv_offset,
+                "byteLength": uv_len,
+                "target": 34962
+            }));
+            let uv_acc_idx = accessors.len();
+            accessors.push(serde_json::json!({
+                "bufferView": uv_view_idx,
+                "byteOffset": 0,
+                "componentType": 5126,
+                "count": num_verts,
+                "type": "VEC2"
+            }));
+
+            // 4. Indices
+            while bin_data.len() % 4 != 0 {
+                bin_data.push(0);
+            }
+            let idx_offset = bin_data.len();
+            for tri in &sub.indices {
+                bin_data.extend_from_slice(&tri[0].to_le_bytes());
+                bin_data.extend_from_slice(&tri[1].to_le_bytes());
+                bin_data.extend_from_slice(&tri[2].to_le_bytes());
+            }
+            let idx_len = bin_data.len() - idx_offset;
+            let idx_view_idx = buffer_views.len();
+            buffer_views.push(serde_json::json!({
+                "buffer": 0,
+                "byteOffset": idx_offset,
+                "byteLength": idx_len,
+                "target": 34963
+            }));
+            let idx_acc_idx = accessors.len();
+            accessors.push(serde_json::json!({
+                "bufferView": idx_view_idx,
+                "byteOffset": 0,
+                "componentType": 5125,
+                "count": num_indices,
+                "type": "SCALAR"
+            }));
+
+            // 5. Material
+            let color = sub.color.unwrap_or([0.8, 0.8, 0.8, 1.0]);
+            materials.push(serde_json::json!({
+                "name": format!("Material_{}", mat_idx + 1),
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [color[0], color[1], color[2], color[3]],
+                    "metallicFactor": 0.0,
+                    "roughnessFactor": 0.5
+                },
+                "doubleSided": true
+            }));
+
+            // 6. Primitive
+            primitives.push(serde_json::json!({
+                "attributes": {
+                    "POSITION": pos_acc_idx,
+                    "NORMAL": norm_acc_idx,
+                    "TEXCOORD_0": uv_acc_idx
+                },
+                "indices": idx_acc_idx,
+                "material": mat_idx,
+                "mode": 4
+            }));
+        }
+
+        if primitives.is_empty() {
+            return Err("No primitives generated for export".into());
+        }
+
+        let total_bin_len = bin_data.len();
+        let bin_filename = path.file_stem().and_then(|s| s.to_str()).unwrap_or("model").to_string() + ".bin";
+
+        let buffers_json = if is_glb {
+            serde_json::json!([
+                { "byteLength": total_bin_len }
+            ])
+        } else {
+            serde_json::json!([
+                { "byteLength": total_bin_len, "uri": bin_filename }
+            ])
+        };
+
+        let gltf_json = serde_json::json!({
+            "asset": { "version": "2.0", "generator": "Mesh" },
+            "scene": 0,
+            "scenes": [ { "nodes": [0] } ],
+            "nodes": [ { "mesh": 0 } ],
+            "meshes": [
+                {
+                    "name": "Model",
+                    "primitives": primitives
+                }
+            ],
+            "materials": materials,
+            "accessors": accessors,
+            "bufferViews": buffer_views,
+            "buffers": buffers_json
+        });
+
+        use std::io::Write;
+        if is_glb {
+            let json_str = serde_json::to_string(&gltf_json).map_err(|e| format!("json err: {}", e))?;
+            let mut json_bytes = json_str.into_bytes();
+            while json_bytes.len() % 4 != 0 {
+                json_bytes.push(b' ');
+            }
+            while bin_data.len() % 4 != 0 {
+                bin_data.push(0);
+            }
+
+            let total_glb_len = 12 + 8 + json_bytes.len() + 8 + bin_data.len();
+
+            let file = std::fs::File::create(path).map_err(|e| format!("create glb file failed: {}", e))?;
+            let mut writer = std::io::BufWriter::new(file);
+
+            // 1. Header (12 bytes)
+            writer.write_all(b"glTF").map_err(|e| format!("write header: {}", e))?;
+            writer.write_all(&2u32.to_le_bytes()).map_err(|e| format!("write version: {}", e))?;
+            writer.write_all(&(total_glb_len as u32).to_le_bytes()).map_err(|e| format!("write length: {}", e))?;
+
+            // 2. JSON Chunk
+            writer.write_all(&(json_bytes.len() as u32).to_le_bytes()).map_err(|e| format!("write json len: {}", e))?;
+            writer.write_all(b"JSON").map_err(|e| format!("write json tag: {}", e))?;
+            writer.write_all(&json_bytes).map_err(|e| format!("write json data: {}", e))?;
+
+            // 3. BIN Chunk
+            writer.write_all(&(bin_data.len() as u32).to_le_bytes()).map_err(|e| format!("write bin len: {}", e))?;
+            writer.write_all(b"BIN\0").map_err(|e| format!("write bin tag: {}", e))?;
+            writer.write_all(&bin_data).map_err(|e| format!("write bin data: {}", e))?;
+
+            writer.flush().map_err(|e| format!("flush: {}", e))?;
+            println!("[glTF Format] Successfully exported GLB to '{}'", path.display());
+        } else {
+            // Write JSON glTF file
+            let json_str = serde_json::to_string_pretty(&gltf_json).map_err(|e| format!("json err: {}", e))?;
+            std::fs::write(path, json_str).map_err(|e| format!("write gltf failed: {}", e))?;
+
+            // Write companion .bin file
+            let bin_path = path.with_file_name(&bin_filename);
+            std::fs::write(&bin_path, bin_data).map_err(|e| format!("write bin failed: {}", e))?;
+            println!("[glTF Format] Successfully exported glTF to '{}' and '{}'", path.display(), bin_path.display());
+        }
+
         Ok(())
     }
 
