@@ -30,6 +30,7 @@ pub struct App {
     pub current_model_path: Option<std::path::PathBuf>,
     #[allow(dead_code)]
     pub animation_controller: AnimationController,
+    pub export_formats: Vec<crate::loader::FileFormatInfo>,
 }
 
 impl App {
@@ -90,6 +91,8 @@ impl App {
         camera.projection = cfg.projection;
         camera.set_loading(initial_loading);
 
+        let export_formats = registry.exportable_formats();
+
         Self {
             renderer,
             wgpu_render_state,
@@ -108,6 +111,7 @@ impl App {
             show_about: false,
             current_model_path: None,
             animation_controller: AnimationController::default(),
+            export_formats,
         }
     }
 
@@ -319,7 +323,7 @@ impl App {
         }
 
         if menu_open {
-            let menu_resp = render_context_menu(ctx, menu_pos, cfg, has_model);
+            let menu_resp = render_context_menu(ctx, menu_pos, cfg, has_model, &self.export_formats);
             let open_dialog = ui_resp.open_file_dialog || menu_resp.open_file_dialog;
             let close_menu = ui_resp.close_menu_requested || menu_resp.close_menu_requested;
             let open_about = ui_resp.open_about_requested || menu_resp.open_about_requested;

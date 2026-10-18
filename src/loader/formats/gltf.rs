@@ -1,4 +1,4 @@
-use super::{compute_normals, Loader, MeshData, SubMesh, TextureData};
+use crate::loader::{compute_normals, FileFormatInfo, Loader, MeshData, SubMesh, TextureData};
 use std::path::Path;
 use std::io::Read;
 use std::sync::Arc;
@@ -8,6 +8,25 @@ pub struct GltfLoader {}
 
 impl Loader for GltfLoader {
     fn name(&self) -> &str { "gltf" }
+
+    fn formats(&self) -> Vec<FileFormatInfo> {
+        vec![
+            FileFormatInfo {
+                extension: "glb",
+                label: "glTF Binary (*.glb)",
+                default_filename: "model.glb",
+                can_load: true,
+                can_export: true,
+            },
+            FileFormatInfo {
+                extension: "gltf",
+                label: "glTF Embedded (*.gltf)",
+                default_filename: "model.gltf",
+                can_load: true,
+                can_export: true,
+            },
+        ]
+    }
 
     fn can_load(&self, path: &Path, header: &[u8]) -> bool {
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {

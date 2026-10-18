@@ -30,11 +30,10 @@ pub fn trigger_file_dialog(
     registry: Arc<LoaderRegistry>,
     tx: Sender<Result<MeshData, String>>,
 ) -> bool {
+    let exts = registry.loadable_extensions();
+    let filter_name = registry.load_filter_description();
     if let Some(path) = FileDialog::new()
-        .add_filter(
-            "3D Models (*.stl, *.3mf, *.obj, *.gltf, *.glb, *.fbx)",
-            &["stl", "3mf", "obj", "gltf", "glb", "fbx"],
-        )
+        .add_filter(&filter_name, &exts)
         .pick_file()
     {
         load_file_async(&path, registry, tx);
@@ -49,23 +48,18 @@ pub fn trigger_export_dialog(
     registry: Arc<LoaderRegistry>,
     mesh: &MeshData,
 ) -> bool {
-    let (filter_name, ext, default_name) = match format {
-        "stl" => ("Stereolithography (*.stl)", "stl", "model.stl"),
-        "obj" => ("Wavefront OBJ (*.obj)", "obj", "model.obj"),
-        "glb" => ("glTF Binary (*.glb)", "glb", "model.glb"),
-        "gltf" => ("glTF Embedded (*.gltf)", "gltf", "model.gltf"),
-        "3mf" => ("3D Manufacturing (*.3mf)", "3mf", "model.3mf"),
-        "fbx" => ("Autodesk FBX (*.fbx)", "fbx", "model.fbx"),
-        _ => return false,
+    let fmt_info = match registry.find_export_format(format) {
+        Some(info) => info,
+        None => return false,
     };
 
     let mut dialog = FileDialog::new()
-        .add_filter(filter_name, &[ext])
-        .set_file_name(default_name);
+        .add_filter(fmt_info.label, &[fmt_info.extension])
+        .set_file_name(fmt_info.default_filename);
 
     if let Some(ref source) = mesh.source_path {
         if let Some(stem) = source.file_stem().and_then(|s| s.to_str()) {
-            dialog = dialog.set_file_name(&format!("{}.{}", stem, ext));
+            dialog = dialog.set_file_name(&format!("{}.{}", stem, fmt_info.extension));
         }
         if let Some(parent) = source.parent() {
             dialog = dialog.set_directory(parent);

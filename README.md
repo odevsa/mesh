@@ -38,6 +38,7 @@
   - **Wavefront OBJ**: Geometry with materials (`.mtl`) and relative texture map resolution.
   - **glTF / GLB**: Both embedded binary and external reference/buffer files.
   - **Autodesk FBX**: Binary and ASCII geometry with relative texture loading.
+  - **COLLADA**: Digital asset exchange format (`.dae`) with materials and multi-submesh support.
 - **Advanced Lighting & Shading**:
   - Realistic multi-source lighting combining hemisphere ambient, directional key light, and camera headlight.
   - Interactive light and shadow color customization in real-time.
@@ -66,6 +67,7 @@
 | **Wavefront OBJ** |     `.obj`      | Polygonal mesh geometry, MTL materials, and relative texture paths        |
 | **glTF / GLB**    | `.gltf`, `.glb` | GL Transmission Format (embedded GLB, external GLTF buffers and images)   |
 | **Autodesk FBX**  |     `.fbx`      | Filmbox exchange format (Binary & ASCII) with relative texture resolution |
+| **COLLADA**       |     `.dae`      | Digital Asset Exchange format with materials, submeshes, and animation    |
 
 ## Installation
 

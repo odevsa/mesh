@@ -45,6 +45,7 @@ pub fn render_context_menu(
     menu_pos: Pos2,
     cfg: &mut Config,
     has_model: bool,
+    export_formats: &[crate::loader::FileFormatInfo],
 ) -> UiResponse {
     ctx.global_style_mut(|s| s.animation_time = 0.0);
 
@@ -354,35 +355,12 @@ pub fn render_context_menu(
                             ui.visuals_mut().widgets.hovered.bg_stroke = egui::Stroke::NONE;
                             ui.visuals_mut().widgets.active.bg_stroke = egui::Stroke::NONE;
 
-                            if menu_button(ui, "STL (*.stl)").clicked() {
-                                resp.export_format_requested = Some("stl".into());
-                                resp.close_menu_requested = true;
-                                submenu_open = false;
-                            }
-                            if menu_button(ui, "Wavefront OBJ (*.obj)").clicked() {
-                                resp.export_format_requested = Some("obj".into());
-                                resp.close_menu_requested = true;
-                                submenu_open = false;
-                            }
-                            if menu_button(ui, "glTF Binary (*.glb)").clicked() {
-                                resp.export_format_requested = Some("glb".into());
-                                resp.close_menu_requested = true;
-                                submenu_open = false;
-                            }
-                            if menu_button(ui, "glTF Embedded (*.gltf)").clicked() {
-                                resp.export_format_requested = Some("gltf".into());
-                                resp.close_menu_requested = true;
-                                submenu_open = false;
-                            }
-                            if menu_button(ui, "3D Manufacturing (*.3mf)").clicked() {
-                                resp.export_format_requested = Some("3mf".into());
-                                resp.close_menu_requested = true;
-                                submenu_open = false;
-                            }
-                            if menu_button(ui, "Autodesk FBX (*.fbx)").clicked() {
-                                resp.export_format_requested = Some("fbx".into());
-                                resp.close_menu_requested = true;
-                                submenu_open = false;
+                            for fmt in export_formats {
+                                if menu_button(ui, fmt.label).clicked() {
+                                    resp.export_format_requested = Some(fmt.extension.into());
+                                    resp.close_menu_requested = true;
+                                    submenu_open = false;
+                                }
                             }
                         });
                     });

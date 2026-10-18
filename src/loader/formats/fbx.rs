@@ -1,4 +1,7 @@
-use super::{compute_normals, Loader, MeshData, SubMesh};
+use crate::loader::{
+    compute_normals, load_texture_from_memory, load_texture_from_path, resolve_relative_file,
+    FileFormatInfo, Loader, MeshData, SubMesh, TextureData,
+};
 use std::path::Path;
 use std::io::Read;
 use std::collections::HashMap;
@@ -30,6 +33,16 @@ fn get_material_color(mat: &ufbx::Material) -> [f32; 4] {
 impl Loader for FbxLoader {
     fn name(&self) -> &str { "fbx" }
 
+    fn formats(&self) -> Vec<FileFormatInfo> {
+        vec![FileFormatInfo {
+            extension: "fbx",
+            label: "Autodesk FBX (*.fbx)",
+            default_filename: "model.fbx",
+            can_load: true,
+            can_export: true,
+        }]
+    }
+
     fn can_load(&self, path: &Path, header: &[u8]) -> bool {
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
             if ext.eq_ignore_ascii_case("fbx") { return true; }
@@ -50,9 +63,9 @@ impl Loader for FbxLoader {
         let scene = ufbx::load_file(path_str, opts).map_err(|e| format!("fbx parse error: {:?}", e))?;
 
         let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
-        let mut tex_cache: HashMap<String, Option<std::sync::Arc<super::TextureData>>> = HashMap::new();
+        let mut tex_cache: HashMap<String, Option<std::sync::Arc<TextureData>>> = HashMap::new();
 
-        let load_fbx_texture = |mat: &ufbx::Material, cache: &mut HashMap<String, Option<std::sync::Arc<super::TextureData>>>| -> Option<std::sync::Arc<super::TextureData>> {
+        let load_fbx_texture = |mat: &ufbx::Material, cache: &mut HashMap<String, Option<std::sync::Arc<TextureData>>>| -> Option<std::sync::Arc<TextureData>> {
             let tex_ref = mat.pbr.base_color.texture.as_ref()
                 .or_else(|| mat.fbx.diffuse_color.texture.as_ref())
                 .or_else(|| mat.textures.iter().find(|t| t.material_prop == "DiffuseColor" || t.material_prop == "BaseColor").map(|t| &t.texture))
@@ -66,7 +79,7 @@ impl Loader for FbxLoader {
                 if let Some(cached) = cache.get(&key) {
                     return cached.clone();
                 }
-                let loaded = super::load_texture_from_memory(&tex.content);
+                let loaded = load_texture_from_memory(&tex.content);
                 cache.insert(key, loaded.clone());
                 return loaded;
             }
@@ -78,8 +91,8 @@ impl Loader for FbxLoader {
                     if let Some(cached) = cache.get(s) {
                         return cached.clone();
                     }
-                    if let Some(found_path) = super::resolve_relative_file(base_dir, s) {
-                        let loaded = super::load_texture_from_path(&found_path);
+                    if let Some(found_path) = resolve_relative_file(base_dir, s) {
+                        let loaded = load_texture_from_path(&found_path);
                         cache.insert(s.to_string(), loaded.clone());
                         if loaded.is_some() {
                             return loaded;
@@ -97,7 +110,7 @@ impl Loader for FbxLoader {
             uvs: Vec<[f32; 2]>,
             indices: Vec<[u32; 3]>,
             color: Option<[f32; 4]>,
-            texture: Option<std::sync::Arc<super::TextureData>>,
+            texture: Option<std::sync::Arc<TextureData>>,
         }
 
         let mut positions = Vec::new();

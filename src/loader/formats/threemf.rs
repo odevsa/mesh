@@ -1,4 +1,4 @@
-use super::{Loader, MeshData, SubMesh};
+use crate::loader::{FileFormatInfo, Loader, MeshData, SubMesh};
 use std::path::Path;
 use std::io::Read;
 use std::collections::HashMap;
@@ -125,6 +125,16 @@ fn resolve_paint_color(s: &str, filament_colors: &[[f32; 4]]) -> Option<[f32; 4]
 
 impl Loader for ThreemfLoader {
     fn name(&self) -> &str { "3mf" }
+
+    fn formats(&self) -> Vec<FileFormatInfo> {
+        vec![FileFormatInfo {
+            extension: "3mf",
+            label: "3D Manufacturing (*.3mf)",
+            default_filename: "model.3mf",
+            can_load: true,
+            can_export: true,
+        }]
+    }
 
     fn can_load(&self, path: &Path, header: &[u8]) -> bool {
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {

@@ -1,4 +1,7 @@
-use super::{Loader, MeshData, SubMesh, TextureData};
+use crate::loader::{
+    load_texture_from_path, resolve_relative_file, FileFormatInfo, Loader, MeshData, SubMesh,
+    TextureData,
+};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
@@ -8,6 +11,16 @@ pub struct ObjLoader {}
 
 impl Loader for ObjLoader {
     fn name(&self) -> &str { "obj" }
+
+    fn formats(&self) -> Vec<FileFormatInfo> {
+        vec![FileFormatInfo {
+            extension: "obj",
+            label: "Wavefront OBJ (*.obj)",
+            default_filename: "model.obj",
+            can_load: true,
+            can_export: true,
+        }]
+    }
 
     fn can_load(&self, path: &Path, _header: &[u8]) -> bool {
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
@@ -60,7 +73,7 @@ impl Loader for ObjLoader {
                     }
                     "mtllib" => {
                         let mtl_file = trimmed["mtllib".len()..].trim();
-                        if let Some(mtl_path) = super::resolve_relative_file(base_dir, mtl_file) {
+                        if let Some(mtl_path) = resolve_relative_file(base_dir, mtl_file) {
                             if let Ok(f) = std::fs::File::open(&mtl_path) {
                                 let mtl_dir = mtl_path.parent().unwrap_or(base_dir);
                                 let mut mtl_reader = BufReader::new(f);
@@ -114,10 +127,10 @@ impl Loader for ObjLoader {
                                             });
 
                                             if !tex_path_str.is_empty() {
-                                                let resolved = super::resolve_relative_file(mtl_dir, &tex_path_str)
-                                                    .or_else(|| super::resolve_relative_file(base_dir, &tex_path_str));
+                                                let resolved = resolve_relative_file(mtl_dir, &tex_path_str)
+                                                    .or_else(|| resolve_relative_file(base_dir, &tex_path_str));
                                                 if let Some(tex_path) = resolved {
-                                                    if let Some(tex_data) = super::load_texture_from_path(&tex_path) {
+                                                    if let Some(tex_data) = load_texture_from_path(&tex_path) {
                                                         mtl_textures.insert(cur_mat.clone(), tex_data);
                                                     }
                                                 }

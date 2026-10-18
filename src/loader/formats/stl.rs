@@ -1,4 +1,4 @@
-use super::{Loader, MeshData, SubMesh};
+use crate::loader::{FileFormatInfo, Loader, MeshData, SubMesh};
 use std::path::Path;
 use std::io::Read;
 
@@ -6,6 +6,16 @@ pub struct StlLoader {}
 
 impl Loader for StlLoader {
     fn name(&self) -> &str { "stl" }
+
+    fn formats(&self) -> Vec<FileFormatInfo> {
+        vec![FileFormatInfo {
+            extension: "stl",
+            label: "Stereolithography (*.stl)",
+            default_filename: "model.stl",
+            can_load: true,
+            can_export: true,
+        }]
+    }
 
     fn can_load(&self, path: &Path, header: &[u8]) -> bool {
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
