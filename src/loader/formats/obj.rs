@@ -294,14 +294,17 @@ impl Loader for ObjLoader {
 
         let mtl_path = path.with_extension("mtl");
         let mtl_filename = mtl_path.file_name().and_then(|s| s.to_str()).unwrap_or("model.mtl");
-        let has_materials = mesh.submeshes.iter().any(|s| s.color.is_some());
+        let has_materials = mesh.submeshes.iter().any(|s| s.color.is_some() || s.texture.is_some());
+        let export_dir = path.parent().unwrap_or_else(|| Path::new("."));
+        let base_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("model");
 
         if has_materials {
             if let Ok(mtl_file) = std::fs::File::create(&mtl_path) {
                 let mut mtl_writer = std::io::BufWriter::new(mtl_file);
                 let _ = writeln!(mtl_writer, "# Wavefront MTL exported by Mesh");
                 for (idx, sub) in mesh.submeshes.iter().enumerate() {
-                    if let Some(c) = sub.color {
+                    if sub.color.is_some() || sub.texture.is_some() {
+                        let c = sub.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
                         let _ = writeln!(mtl_writer, "newmtl Material_{}", idx + 1);
                         let _ = writeln!(mtl_writer, "Ns 250.000000");
                         let _ = writeln!(mtl_writer, "Ka 1.000000 1.000000 1.000000");
@@ -310,6 +313,15 @@ impl Loader for ObjLoader {
                         let _ = writeln!(mtl_writer, "Ni 1.500000");
                         let _ = writeln!(mtl_writer, "d {:.4}", c[3]);
                         let _ = writeln!(mtl_writer, "illum 2");
+
+                        if let Some(ref tex) = sub.texture {
+                            let tex_filename = format!("{}_tex_{}.png", base_name, idx + 1);
+                            let tex_path = export_dir.join(&tex_filename);
+                            if let Some(img_buf) = image::RgbaImage::from_raw(tex.width, tex.height, tex.rgba.clone()) {
+                                let _ = img_buf.save(&tex_path);
+                            }
+                            let _ = writeln!(mtl_writer, "map_Kd {}", tex_filename);
+                        }
                     }
                 }
             }
@@ -317,11 +329,13 @@ impl Loader for ObjLoader {
         }
 
         let mut v_offset = 1usize;
+        let mut vt_offset = 1usize;
+        let mut vn_offset = 1usize;
 
         if !mesh.submeshes.is_empty() {
             for (idx, sub) in mesh.submeshes.iter().enumerate() {
                 writeln!(writer, "g Submesh_{}", idx + 1).map_err(|e| format!("write: {}", e))?;
-                if sub.color.is_some() {
+                if sub.color.is_some() || sub.texture.is_some() {
                     writeln!(writer, "usemtl Material_{}", idx + 1).map_err(|e| format!("write: {}", e))?;
                 }
 
@@ -333,7 +347,8 @@ impl Loader for ObjLoader {
                     writeln!(writer, "vn {:.6} {:.6} {:.6}", n[0], n[2], -n[1]).map_err(|e| format!("write: {}", e))?;
                 }
                 for uv in &sub.uvs {
-                    writeln!(writer, "vt {:.6} {:.6}", uv[0], uv[1]).map_err(|e| format!("write: {}", e))?;
+                    // In OBJ, V=0 is at the bottom of the image
+                    writeln!(writer, "vt {:.6} {:.6}", uv[0], 1.0 - uv[1]).map_err(|e| format!("write: {}", e))?;
                 }
 
                 let has_n = !sub.normals.is_empty();
@@ -346,18 +361,28 @@ impl Loader for ObjLoader {
                     let v1 = v_offset + tri[1] as usize;
                     let v2 = v_offset + tri[2] as usize;
 
+                    let vt0 = vt_offset + tri[0] as usize;
+                    let vt1 = vt_offset + tri[1] as usize;
+                    let vt2 = vt_offset + tri[2] as usize;
+
+                    let vn0 = vn_offset + tri[0] as usize;
+                    let vn1 = vn_offset + tri[1] as usize;
+                    let vn2 = vn_offset + tri[2] as usize;
+
                     if has_uv && has_n {
-                        writeln!(writer, "f {}/{}/{} {}/{}/{} {}/{}/{}", v0, v0, v0, v1, v1, v1, v2, v2, v2).map_err(|e| format!("write: {}", e))?;
+                        writeln!(writer, "f {}/{}/{} {}/{}/{} {}/{}/{}", v0, vt0, vn0, v1, vt1, vn1, v2, vt2, vn2).map_err(|e| format!("write: {}", e))?;
                     } else if has_n {
-                        writeln!(writer, "f {}//{} {}//{} {}//{}", v0, v0, v1, v1, v2, v2).map_err(|e| format!("write: {}", e))?;
+                        writeln!(writer, "f {}//{} {}//{} {}//{}", v0, vn0, v1, vn1, v2, vn2).map_err(|e| format!("write: {}", e))?;
                     } else if has_uv {
-                        writeln!(writer, "f {}/{} {}/{} {}/{}", v0, v0, v1, v1, v2, v2).map_err(|e| format!("write: {}", e))?;
+                        writeln!(writer, "f {}/{} {}/{} {}/{}", v0, vt0, v1, vt1, v2, vt2).map_err(|e| format!("write: {}", e))?;
                     } else {
                         writeln!(writer, "f {} {} {}", v0, v1, v2).map_err(|e| format!("write: {}", e))?;
                     }
                 }
 
                 v_offset += sub.positions.len();
+                vt_offset += sub.uvs.len();
+                vn_offset += sub.normals.len();
             }
         } else {
             for p in &mesh.positions {
@@ -367,7 +392,7 @@ impl Loader for ObjLoader {
                 writeln!(writer, "vn {:.6} {:.6} {:.6}", n[0], n[2], -n[1]).map_err(|e| format!("write: {}", e))?;
             }
             for uv in &mesh.uvs {
-                writeln!(writer, "vt {:.6} {:.6}", uv[0], uv[1]).map_err(|e| format!("write: {}", e))?;
+                writeln!(writer, "vt {:.6} {:.6}", uv[0], 1.0 - uv[1]).map_err(|e| format!("write: {}", e))?;
             }
 
             let has_n = !mesh.normals.is_empty();

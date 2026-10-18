@@ -445,12 +445,16 @@ impl Loader for GltfLoader {
         };
 
         let is_glb = path.extension().and_then(|s| s.to_str()).map(|e| e.eq_ignore_ascii_case("glb")).unwrap_or(true);
+        let export_dir = path.parent().unwrap_or_else(|| Path::new("."));
+        let base_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("model");
 
         let mut bin_data = Vec::new();
         let mut buffer_views = Vec::new();
         let mut accessors = Vec::new();
         let mut primitives = Vec::new();
         let mut materials = Vec::new();
+        let mut images = Vec::new();
+        let mut textures = Vec::new();
 
         for (mat_idx, sub) in submeshes.iter().enumerate() {
             if sub.positions.is_empty() || sub.indices.is_empty() {
@@ -463,13 +467,20 @@ impl Loader for GltfLoader {
             let mut min_pos = [f32::INFINITY; 3];
             let mut max_pos = [f32::NEG_INFINITY; 3];
 
-            // 1. Positions - Convert Mesh viewer (+Z up, -Y front) to glTF (+Y up, +Z out)
+            // 1. Positions - If model is already Y-up and has rest positions, use them directly in glTF space
+            let use_rest = !sub.rest_positions.is_empty();
+            let pos_slice = if use_rest { &sub.rest_positions } else { &sub.positions };
+
             while bin_data.len() % 4 != 0 {
                 bin_data.push(0);
             }
             let pos_offset = bin_data.len();
-            for p in &sub.positions {
-                let p_gltf = [p[0], p[2], -p[1]];
+            for p in pos_slice {
+                let p_gltf = if mesh.is_y_up && use_rest {
+                    *p
+                } else {
+                    [p[0], p[2], -p[1]]
+                };
                 min_pos[0] = min_pos[0].min(p_gltf[0]);
                 min_pos[1] = min_pos[1].min(p_gltf[1]);
                 min_pos[2] = min_pos[2].min(p_gltf[2]);
@@ -500,19 +511,27 @@ impl Loader for GltfLoader {
                 "max": max_pos
             }));
 
-            // 2. Normals - Convert to glTF (+Y up, +Z out)
-            let sub_normals: Vec<[f32; 3]> = if sub.normals.len() == sub.positions.len() {
-                sub.normals.clone()
+            // 2. Normals
+            let computed_normals;
+            let norm_slice: &[[f32; 3]] = if use_rest && sub.rest_normals.len() == sub.positions.len() {
+                &sub.rest_normals
+            } else if sub.normals.len() == sub.positions.len() {
+                &sub.normals
             } else {
-                compute_normals(&sub.positions, &sub.indices)
+                computed_normals = compute_normals(&sub.positions, &sub.indices);
+                &computed_normals
             };
 
             while bin_data.len() % 4 != 0 {
                 bin_data.push(0);
             }
             let norm_offset = bin_data.len();
-            for n in &sub_normals {
-                let n_gltf = [n[0], n[2], -n[1]];
+            for n in norm_slice {
+                let n_gltf = if mesh.is_y_up && use_rest {
+                    *n
+                } else {
+                    [n[0], n[2], -n[1]]
+                };
                 bin_data.extend_from_slice(&n_gltf[0].to_le_bytes());
                 bin_data.extend_from_slice(&n_gltf[1].to_le_bytes());
                 bin_data.extend_from_slice(&n_gltf[2].to_le_bytes());
@@ -588,25 +607,139 @@ impl Loader for GltfLoader {
                 "type": "SCALAR"
             }));
 
-            // 5. Material
-            let color = sub.color.unwrap_or([0.8, 0.8, 0.8, 1.0]);
+            // 5. Skinning attributes (JOINTS_0 and WEIGHTS_0)
+            let mut joints_acc_idx = None;
+            let mut weights_acc_idx = None;
+            if let (Some(j_indices), Some(j_weights)) = (&sub.joint_indices, &sub.joint_weights) {
+                while bin_data.len() % 4 != 0 {
+                    bin_data.push(0);
+                }
+                let joints_offset = bin_data.len();
+                for i in 0..num_verts {
+                    let quads = j_indices.get(i).copied().unwrap_or([0, 0, 0, 0]);
+                    bin_data.extend_from_slice(&quads[0].to_le_bytes());
+                    bin_data.extend_from_slice(&quads[1].to_le_bytes());
+                    bin_data.extend_from_slice(&quads[2].to_le_bytes());
+                    bin_data.extend_from_slice(&quads[3].to_le_bytes());
+                }
+                let joints_len = bin_data.len() - joints_offset;
+                let joints_view_idx = buffer_views.len();
+                buffer_views.push(serde_json::json!({
+                    "buffer": 0,
+                    "byteOffset": joints_offset,
+                    "byteLength": joints_len,
+                    "target": 34962
+                }));
+                let j_acc = accessors.len();
+                accessors.push(serde_json::json!({
+                    "bufferView": joints_view_idx,
+                    "byteOffset": 0,
+                    "componentType": 5123,
+                    "count": num_verts,
+                    "type": "VEC4"
+                }));
+                joints_acc_idx = Some(j_acc);
+
+                while bin_data.len() % 4 != 0 {
+                    bin_data.push(0);
+                }
+                let weights_offset = bin_data.len();
+                for i in 0..num_verts {
+                    let wgts = j_weights.get(i).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
+                    bin_data.extend_from_slice(&wgts[0].to_le_bytes());
+                    bin_data.extend_from_slice(&wgts[1].to_le_bytes());
+                    bin_data.extend_from_slice(&wgts[2].to_le_bytes());
+                    bin_data.extend_from_slice(&wgts[3].to_le_bytes());
+                }
+                let weights_len = bin_data.len() - weights_offset;
+                let weights_view_idx = buffer_views.len();
+                buffer_views.push(serde_json::json!({
+                    "buffer": 0,
+                    "byteOffset": weights_offset,
+                    "byteLength": weights_len,
+                    "target": 34962
+                }));
+                let w_acc = accessors.len();
+                accessors.push(serde_json::json!({
+                    "bufferView": weights_view_idx,
+                    "byteOffset": 0,
+                    "componentType": 5126,
+                    "count": num_verts,
+                    "type": "VEC4"
+                }));
+                weights_acc_idx = Some(w_acc);
+            }
+
+            // 6. Material with diffuse texture
+            let color = sub.color.unwrap_or([1.0, 1.0, 1.0, 1.0]);
+            let mut pbr = serde_json::json!({
+                "baseColorFactor": [color[0], color[1], color[2], color[3]],
+                "metallicFactor": 0.0,
+                "roughnessFactor": 0.5
+            });
+
+            if let Some(ref tex) = sub.texture {
+                let img_idx = images.len();
+                if is_glb {
+                    let mut png_bytes = Vec::new();
+                    if let Some(img_buf) = image::RgbaImage::from_raw(tex.width, tex.height, tex.rgba.clone()) {
+                        let mut cursor = std::io::Cursor::new(&mut png_bytes);
+                        let _ = img_buf.write_to(&mut cursor, image::ImageFormat::Png);
+                    }
+                    while bin_data.len() % 4 != 0 {
+                        bin_data.push(0);
+                    }
+                    let img_offset = bin_data.len();
+                    bin_data.extend_from_slice(&png_bytes);
+                    let img_len = bin_data.len() - img_offset;
+                    let view_idx = buffer_views.len();
+                    buffer_views.push(serde_json::json!({
+                        "buffer": 0,
+                        "byteOffset": img_offset,
+                        "byteLength": img_len
+                    }));
+                    images.push(serde_json::json!({
+                        "bufferView": view_idx,
+                        "mimeType": "image/png"
+                    }));
+                } else {
+                    let tex_filename = format!("{}_tex_{}.png", base_name, mat_idx + 1);
+                    let tex_path = export_dir.join(&tex_filename);
+                    if let Some(img_buf) = image::RgbaImage::from_raw(tex.width, tex.height, tex.rgba.clone()) {
+                        let _ = img_buf.save(&tex_path);
+                    }
+                    images.push(serde_json::json!({
+                        "uri": tex_filename
+                    }));
+                }
+                let t_idx = textures.len();
+                textures.push(serde_json::json!({
+                    "source": img_idx
+                }));
+                pbr["baseColorTexture"] = serde_json::json!({
+                    "index": t_idx
+                });
+            }
+
             materials.push(serde_json::json!({
                 "name": format!("Material_{}", mat_idx + 1),
-                "pbrMetallicRoughness": {
-                    "baseColorFactor": [color[0], color[1], color[2], color[3]],
-                    "metallicFactor": 0.0,
-                    "roughnessFactor": 0.5
-                },
+                "pbrMetallicRoughness": pbr,
                 "doubleSided": true
             }));
 
-            // 6. Primitive
+            // 7. Primitive
+            let mut prim_attrs = serde_json::json!({
+                "POSITION": pos_acc_idx,
+                "NORMAL": norm_acc_idx,
+                "TEXCOORD_0": uv_acc_idx
+            });
+            if let (Some(ja), Some(wa)) = (joints_acc_idx, weights_acc_idx) {
+                prim_attrs["JOINTS_0"] = serde_json::json!(ja);
+                prim_attrs["WEIGHTS_0"] = serde_json::json!(wa);
+            }
+
             primitives.push(serde_json::json!({
-                "attributes": {
-                    "POSITION": pos_acc_idx,
-                    "NORMAL": norm_acc_idx,
-                    "TEXCOORD_0": uv_acc_idx
-                },
+                "attributes": prim_attrs,
                 "indices": idx_acc_idx,
                 "material": mat_idx,
                 "mode": 4
@@ -615,6 +748,176 @@ impl Loader for GltfLoader {
 
         if primitives.is_empty() {
             return Err("No primitives generated for export".into());
+        }
+
+        // Skins
+        let mut gltf_skins = Vec::new();
+        if let Some(skin) = mesh.skins.first() {
+            if !skin.joints.is_empty() {
+                while bin_data.len() % 4 != 0 {
+                    bin_data.push(0);
+                }
+                let ibm_offset = bin_data.len();
+                for joint in &skin.joints {
+                    for col in &joint.inverse_bind_matrix {
+                        for &val in col {
+                            bin_data.extend_from_slice(&val.to_le_bytes());
+                        }
+                    }
+                }
+                let ibm_len = bin_data.len() - ibm_offset;
+                let ibm_view_idx = buffer_views.len();
+                buffer_views.push(serde_json::json!({
+                    "buffer": 0,
+                    "byteOffset": ibm_offset,
+                    "byteLength": ibm_len
+                }));
+                let ibm_acc_idx = accessors.len();
+                accessors.push(serde_json::json!({
+                    "bufferView": ibm_view_idx,
+                    "byteOffset": 0,
+                    "componentType": 5126,
+                    "count": skin.joints.len(),
+                    "type": "MAT4"
+                }));
+                gltf_skins.push(serde_json::json!({
+                    "name": if skin.name.is_empty() { "Armature".to_string() } else { skin.name.clone() },
+                    "joints": skin.joints.iter().map(|j| j.node_index).collect::<Vec<_>>(),
+                    "inverseBindMatrices": ibm_acc_idx
+                }));
+            }
+        }
+
+        // Nodes
+        let mut gltf_nodes = Vec::new();
+        let scene_roots;
+        if !mesh.nodes.is_empty() {
+            let mesh_node_idx = mesh.nodes.iter().position(|n| n.mesh_index.is_some()).unwrap_or(0);
+            for (i, node) in mesh.nodes.iter().enumerate() {
+                let mut n_json = serde_json::json!({
+                    "name": if node.name.is_empty() { format!("Node_{}", i) } else { node.name.clone() },
+                    "translation": node.initial_translation,
+                    "rotation": node.initial_rotation,
+                    "scale": node.initial_scale,
+                });
+                if !node.children.is_empty() {
+                    n_json["children"] = serde_json::json!(node.children);
+                }
+                if i == mesh_node_idx {
+                    n_json["mesh"] = serde_json::json!(0);
+                    if !gltf_skins.is_empty() {
+                        n_json["skin"] = serde_json::json!(0);
+                    }
+                }
+                gltf_nodes.push(n_json);
+            }
+            let roots: Vec<usize> = mesh.nodes.iter().enumerate()
+                .filter_map(|(i, n)| if n.parent.is_none() { Some(i) } else { None })
+                .collect();
+            scene_roots = if roots.is_empty() { vec![0] } else { roots };
+        } else {
+            gltf_nodes.push(serde_json::json!({
+                "name": "Model",
+                "mesh": 0
+            }));
+            scene_roots = vec![0];
+        }
+
+        // Animations
+        let mut gltf_animations = Vec::new();
+        for clip in &mesh.animations {
+            let mut gltf_channels = Vec::new();
+            let mut gltf_samplers = Vec::new();
+
+            for ch in &clip.channels {
+                if ch.timestamps.is_empty() || ch.values.is_empty() {
+                    continue;
+                }
+                while bin_data.len() % 4 != 0 {
+                    bin_data.push(0);
+                }
+                let time_offset = bin_data.len();
+                let mut min_t = f32::INFINITY;
+                let mut max_t = f32::NEG_INFINITY;
+                for &t in &ch.timestamps {
+                    min_t = min_t.min(t);
+                    max_t = max_t.max(t);
+                    bin_data.extend_from_slice(&t.to_le_bytes());
+                }
+                let time_len = bin_data.len() - time_offset;
+                let time_view_idx = buffer_views.len();
+                buffer_views.push(serde_json::json!({
+                    "buffer": 0,
+                    "byteOffset": time_offset,
+                    "byteLength": time_len
+                }));
+                let time_acc_idx = accessors.len();
+                accessors.push(serde_json::json!({
+                    "bufferView": time_view_idx,
+                    "byteOffset": 0,
+                    "componentType": 5126,
+                    "count": ch.timestamps.len(),
+                    "type": "SCALAR",
+                    "min": [min_t],
+                    "max": [max_t]
+                }));
+
+                while bin_data.len() % 4 != 0 {
+                    bin_data.push(0);
+                }
+                let val_offset = bin_data.len();
+                for &v in &ch.values {
+                    bin_data.extend_from_slice(&v.to_le_bytes());
+                }
+                let val_len = bin_data.len() - val_offset;
+                let val_view_idx = buffer_views.len();
+                buffer_views.push(serde_json::json!({
+                    "buffer": 0,
+                    "byteOffset": val_offset,
+                    "byteLength": val_len
+                }));
+                let (acc_type, path_str) = match ch.property {
+                    TargetProperty::Translation => ("VEC3", "translation"),
+                    TargetProperty::Rotation => ("VEC4", "rotation"),
+                    TargetProperty::Scale => ("VEC3", "scale"),
+                    TargetProperty::Weights => ("SCALAR", "weights"),
+                };
+                let val_acc_idx = accessors.len();
+                accessors.push(serde_json::json!({
+                    "bufferView": val_view_idx,
+                    "byteOffset": 0,
+                    "componentType": 5126,
+                    "count": ch.timestamps.len(),
+                    "type": acc_type
+                }));
+
+                let sampler_idx = gltf_samplers.len();
+                gltf_samplers.push(serde_json::json!({
+                    "input": time_acc_idx,
+                    "interpolation": match ch.interpolation {
+                        Interpolation::Step => "STEP",
+                        Interpolation::CubicSpline => "CUBICSPLINE",
+                        _ => "LINEAR"
+                    },
+                    "output": val_acc_idx
+                }));
+
+                gltf_channels.push(serde_json::json!({
+                    "sampler": sampler_idx,
+                    "target": {
+                        "node": ch.target_node,
+                        "path": path_str
+                    }
+                }));
+            }
+
+            if !gltf_channels.is_empty() {
+                gltf_animations.push(serde_json::json!({
+                    "name": if clip.name.is_empty() { "Animation".to_string() } else { clip.name.clone() },
+                    "channels": gltf_channels,
+                    "samplers": gltf_samplers
+                }));
+            }
         }
 
         let total_bin_len = bin_data.len();
@@ -630,11 +933,11 @@ impl Loader for GltfLoader {
             ])
         };
 
-        let gltf_json = serde_json::json!({
+        let mut gltf_json = serde_json::json!({
             "asset": { "version": "2.0", "generator": "Mesh" },
             "scene": 0,
-            "scenes": [ { "nodes": [0] } ],
-            "nodes": [ { "mesh": 0 } ],
+            "scenes": [ { "nodes": scene_roots } ],
+            "nodes": gltf_nodes,
             "meshes": [
                 {
                     "name": "Model",
@@ -646,6 +949,17 @@ impl Loader for GltfLoader {
             "bufferViews": buffer_views,
             "buffers": buffers_json
         });
+
+        if !images.is_empty() {
+            gltf_json["images"] = serde_json::json!(images);
+            gltf_json["textures"] = serde_json::json!(textures);
+        }
+        if !gltf_skins.is_empty() {
+            gltf_json["skins"] = serde_json::json!(gltf_skins);
+        }
+        if !gltf_animations.is_empty() {
+            gltf_json["animations"] = serde_json::json!(gltf_animations);
+        }
 
         use std::io::Write;
         if is_glb {

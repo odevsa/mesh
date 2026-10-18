@@ -235,7 +235,7 @@ pub fn render_animation_controls(
                 .inner_margin(Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     let clips_len = controller.clips().len();
-                    ui.set_width(if clips_len > 1 { 380.0 } else { 330.0 });
+                    ui.set_width(if clips_len > 1 { 500.0 } else { 330.0 });
 
                     let duration = controller.duration();
                     let current_time = controller.current_time();
@@ -282,7 +282,7 @@ pub fn render_animation_controls(
 
                     ui.add_space(4.0);
 
-                    // Line 2: 3-column layout (Left: time [/ clip], Center: play/stop/loop, Right: speed)
+                    // Line 2: 3-column layout (Left: time, Center: play/stop/loop, Right: clip / speed)
                     ui.columns(3, |cols| {
                         // Left-aligned: current_time / duration
                         cols[0].with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -291,26 +291,6 @@ pub fn render_animation_controls(
                                     .size(11.0)
                                     .color(ui.visuals().weak_text_color()),
                             );
-
-                            if clips_len > 1 {
-                                let current_clip_name = controller.active_clip_name().to_string();
-                                egui::ComboBox::from_id_salt("anim_clip_select")
-                                    .selected_text(&current_clip_name)
-                                    .width(60.0)
-                                    .show_ui(ui, |ui| {
-                                        for i in 0..clips_len {
-                                            let name = if controller.clips()[i].name.is_empty() {
-                                                format!("Clip {}", i + 1)
-                                            } else {
-                                                controller.clips()[i].name.clone()
-                                            };
-                                            if ui.selectable_label(controller.active_clip_index == i, name).clicked() {
-                                                controller.select_clip(i);
-                                                user_interacted = true;
-                                            }
-                                        }
-                                    });
-                            }
                         });
 
                         // Center-aligned: play/pause, stop (square), loop
@@ -344,12 +324,14 @@ pub fn render_animation_controls(
                             },
                         );
 
-                        // Right-aligned: speed (without label)
+                        // Right-aligned: speed and clip selector
                         cols[2].with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+
                             let speed_text = format!("{:.2}x", controller.speed());
                             egui::ComboBox::from_id_salt("anim_speed_select")
                                 .selected_text(speed_text)
-                                .width(56.0)
+                                .width(54.0)
                                 .show_ui(ui, |ui| {
                                     for &sp in &[0.25, 0.5, 1.0, 1.5, 2.0] {
                                         if ui.selectable_label((controller.speed() - sp).abs() < 1e-4, format!("{:.2}x", sp)).clicked() {
@@ -357,6 +339,26 @@ pub fn render_animation_controls(
                                         }
                                     }
                                 });
+
+                            if clips_len > 1 {
+                                let current_clip_name = controller.active_clip_name().to_string();
+                                egui::ComboBox::from_id_salt("anim_clip_select")
+                                    .selected_text(&current_clip_name)
+                                    .width(75.0)
+                                    .show_ui(ui, |ui| {
+                                        for i in 0..clips_len {
+                                            let name = if controller.clips()[i].name.is_empty() {
+                                                format!("Clip {}", i + 1)
+                                            } else {
+                                                controller.clips()[i].name.clone()
+                                            };
+                                            if ui.selectable_label(controller.active_clip_index == i, name).clicked() {
+                                                controller.select_clip(i);
+                                                user_interacted = true;
+                                            }
+                                        }
+                                    });
+                            }
                         });
                     });
                 });
